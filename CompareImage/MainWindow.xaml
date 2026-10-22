@@ -1,0 +1,550 @@
+<Window x:Class="CompareImage.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:models="clr-namespace:CompareImage.Models"
+        mc:Ignorable="d"
+        Title="画像領域OCR/画像文字列比較ツール (Windows 11 標準 OCR &amp; ピクセル比較)" Height="800" Width="1240"
+        WindowStartupLocation="CenterScreen"
+        FontFamily="Segoe UI, Yu Gothic UI" FontSize="13">
+
+    <Window.Icon>
+        <DrawingImage>
+            <DrawingImage.Drawing>
+                <DrawingGroup>
+                    <!-- 背景プレート (角丸スクエア) -->
+                    <GeometryDrawing Brush="#0078D4">
+                        <GeometryDrawing.Geometry>
+                            <RectangleGeometry Rect="0,0,32,32" RadiusX="6" RadiusY="6"/>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <!-- 左側のベース画像カード -->
+                    <GeometryDrawing Brush="#FFFFFF">
+                        <GeometryDrawing.Geometry>
+                            <RectangleGeometry Rect="5,6,10,13" RadiusX="1.5" RadiusY="1.5"/>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <!-- 右側のターゲット画像カード -->
+                    <GeometryDrawing Brush="#70D4FF">
+                        <GeometryDrawing.Geometry>
+                            <RectangleGeometry Rect="17,6,10,13" RadiusX="1.5" RadiusY="1.5"/>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <!-- 比較スキャンライン -->
+                    <GeometryDrawing>
+                        <GeometryDrawing.Pen>
+                            <Pen Brush="#FFFFFF" Thickness="1.8" EndLineCap="Round" StartLineCap="Round"/>
+                        </GeometryDrawing.Pen>
+                        <GeometryDrawing.Geometry>
+                            <LineGeometry StartPoint="7,24" EndPoint="25,24"/>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                    <!-- 比較シンボル -->
+                    <GeometryDrawing Brush="#FFB900">
+                        <GeometryDrawing.Geometry>
+                            <EllipseGeometry Center="16,24" RadiusX="3" RadiusY="3"/>
+                        </GeometryDrawing.Geometry>
+                    </GeometryDrawing>
+                </DrawingGroup>
+            </DrawingImage.Drawing>
+        </DrawingImage>
+    </Window.Icon>
+
+    <Window.Resources>
+        <!-- メニュー右上 終了[X]ボタンスタイル (Windows標準スタイルのクローズボタン) -->
+        <Style x:Key="MenuCloseButton" TargetType="Button">
+            <Setter Property="Width" Value="38"/>
+            <Setter Property="VerticalAlignment" Value="Stretch"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#555555"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border"
+                                Background="{TemplateBinding Background}"
+                                BorderThickness="0"
+                                SnapsToDevicePixels="True">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="False"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#E81123"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#C42B1C"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ボタンスタイル -->
+        <Style x:Key="ActionButton" TargetType="Button">
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="Margin" Value="4"/>
+            <Setter Property="Background" Value="#0078D4"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#005A9E"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Background" Value="#CCCCCC"/>
+                    <Setter Property="Foreground" Value="#666666"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style x:Key="SecondaryButton" TargetType="Button">
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Margin" Value="3"/>
+            <Setter Property="Background" Value="#F3F3F3"/>
+            <Setter Property="BorderBrush" Value="#D1D1D1"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#E5E5E5"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <DockPanel Background="#F9F9F9">
+        <!-- 上部メニューバーコンテナ -->
+        <Border DockPanel.Dock="Top" Background="#F0F0F0" BorderBrush="#E0E0E0" BorderThickness="0,0,0,1">
+            <DockPanel>
+                <!-- 右上 アプリケーション終了 [X] ボタン -->
+                <Button DockPanel.Dock="Right"
+                        Style="{StaticResource MenuCloseButton}"
+                        Click="MenuExit_Click"
+                        ToolTip="終了 (Alt+F4)"
+                        Focusable="False">
+                    <Viewbox Width="10" Height="10">
+                        <Path Data="M 0,0 L 10,10 M 10,0 L 0,10"
+                              Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              StrokeThickness="1.5"
+                              StrokeStartLineCap="Round"
+                              StrokeEndLineCap="Round"/>
+                    </Viewbox>
+                </Button>
+
+                <!-- メニューバー -->
+                <Menu Background="Transparent" BorderThickness="0" Padding="2" FontSize="12">
+                    <MenuItem Header="ファイル(_F)">
+                        <MenuItem Header="📁 ベース画像を開く(_B)..." Click="BtnOpenBaseImage_Click"/>
+                        <MenuItem Header="📁 ターゲット画像を開く(_T)..." Click="BtnOpenTargetImage_Click"/>
+                        <Separator/>
+                        <MenuItem Header="💾 ROI設定をJSONに保存(_S)..." Click="BtnSaveJson_Click"/>
+                        <MenuItem Header="📂 ROI設定をJSONから読込(_L)..." Click="BtnLoadJson_Click"/>
+                        <Separator/>
+                        <MenuItem Header="❌ 終了(_X)" Click="MenuExit_Click"/>
+                    </MenuItem>
+                    <MenuItem Header="編集(_E)">
+                        <MenuItem Header="🔍 画像から文字列領域を自動検出 (OCR)" Click="BtnAutoDetectRois_Click"/>
+                        <Separator/>
+                        <MenuItem Header="▲ 選択領域を1つ上に移動" Click="BtnUpRoi_Click"/>
+                        <MenuItem Header="▼ 選択領域を1つ下に移動" Click="BtnDownRoi_Click"/>
+                        <MenuItem Header="↕ 領域をY座標順に自動ソート" Click="BtnSortRoisByY_Click"/>
+                        <Separator/>
+                        <MenuItem Header="📋 ベース領域をターゲットへコピー(_C)" Click="BtnCopyBaseToTarget_Click"/>
+                        <MenuItem Header="🗑 選択行を削除(_D)" Click="BtnDeleteSelectedRoi_Click"/>
+                        <MenuItem Header="🧹 すべての領域をクリア(_A)" Click="BtnClearRois_Click"/>
+                        <Separator/>
+                        <MenuItem Header="🔤 すべての領域を「文字列比較」に設定" Click="MenuSetAllTextMode_Click"/>
+                        <MenuItem Header="🖼 すべての領域を「画像比較」に設定" Click="MenuSetAllImageMode_Click"/>
+                    </MenuItem>
+                    <MenuItem Header="比較(_C)">
+                        <MenuItem Header="🔄 画像ペアをスキャン(_S)" Click="BtnScanPairs_Click"/>
+                        <MenuItem Header="▶ 比較を実行(_R)" Click="BtnRunCompare_Click"/>
+                        <Separator/>
+                        <MenuItem Header="📂 外部ペアマッチングルール読込 (JSON)..." Click="BtnLoadMatchingRulesJson_Click"/>
+                        <Separator/>
+                        <MenuItem Header="⚙ OCRエンジンの選択(_O)">
+                            <MenuItem x:Name="MenuEngineWinRT" Header="Windows 11 標準 OCR (WinRT)" IsCheckable="True" IsChecked="True" Click="MenuEngineWinRT_Click"/>
+                            <MenuItem x:Name="MenuEngineTesseract" Header="Tesseract OCR" IsCheckable="True" Click="MenuEngineTesseract_Click"/>
+                        </MenuItem>
+                        <Separator/>
+                        <MenuItem Header="📊 比較結果をCSVエクスポート(_E)..." Click="BtnExportCsv_Click"/>
+                        <MenuItem Header="📑 比較結果の詳細エクスポート (Excel/Markdown)(_D)..." Click="BtnExportDetail_Click"/>
+                    </MenuItem>
+                    <MenuItem Header="ヘルプ(_H)">
+                        <MenuItem Header="ℹ バージョン情報(_A)" Click="MenuAbout_Click"/>
+                    </MenuItem>
+                </Menu>
+            </DockPanel>
+        </Border>
+
+        <TabControl Margin="8">
+            <!-- タブ1: 領域(ROI)座標指定 -->
+            <TabItem Header="  📐 1. 比較領域 (ROI) の座標・比較方式指定  " FontWeight="SemiBold" Padding="12,8">
+                <Grid Margin="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- ツールバー -->
+                    <Border Grid.Row="0" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,8">
+                        <WrapPanel VerticalAlignment="Center">
+                            <Button Content="📁 ベース画像を開く" Style="{StaticResource SecondaryButton}" Click="BtnOpenBaseImage_Click"/>
+                            <Button Content="📁 ターゲット画像を開く" Style="{StaticResource SecondaryButton}" Click="BtnOpenTargetImage_Click"/>
+                            <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="6,0"/>
+
+                            <RadioButton x:Name="RbModeBase" Content="① ベース画像設定" IsChecked="True" GroupName="Mode" VerticalAlignment="Center" Margin="6,0" Checked="RbMode_Checked"/>
+                            <RadioButton x:Name="RbModeTarget" Content="② ターゲット画像設定" GroupName="Mode" VerticalAlignment="Center" Margin="6,0" Checked="RbMode_Checked"/>
+                            <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="6,0"/>
+
+                            <Button Content="🔍 文字列領域を自動検出 (OCR)" Style="{StaticResource ActionButton}" Margin="4,2" Click="BtnAutoDetectRois_Click"/>
+                            <Button Content="📋 ベース領域をターゲットへコピー" Style="{StaticResource SecondaryButton}" Click="BtnCopyBaseToTarget_Click"/>
+                            <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="6,0"/>
+
+                            <Button Content="💾 JSONに保存" Style="{StaticResource SecondaryButton}" Click="BtnSaveJson_Click"/>
+                            <Button Content="📂 JSONから読込" Style="{StaticResource SecondaryButton}" Click="BtnLoadJson_Click"/>
+
+                            <StackPanel Orientation="Horizontal" Margin="14,0,0,0">
+                                <TextBlock Text="ズーム: " VerticalAlignment="Center" Foreground="#666666"/>
+                                <Slider x:Name="ZoomSlider" Minimum="0.2" Maximum="3.0" Value="1.0" Width="90" VerticalAlignment="Center" ValueChanged="ZoomSlider_ValueChanged"/>
+                                <TextBlock Text="{Binding ElementName=ZoomSlider, Path=Value, StringFormat={}{0:P0}}" Width="40" VerticalAlignment="Center" Margin="4,0,0,0"/>
+                            </StackPanel>
+                        </WrapPanel>
+                    </Border>
+
+                    <!-- メインコンテンツ (左右分割) -->
+                    <Grid Grid.Row="1">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="3*"/>
+                            <ColumnDefinition Width="5"/>
+                            <ColumnDefinition Width="1.7*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- 左側: 画像キャンバス -->
+                        <Border Grid.Column="0" Background="#2B2B2B" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="4">
+                            <ScrollViewer x:Name="ImageScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                <Canvas x:Name="RoiCanvas" Background="Transparent"
+                                        MouseDown="RoiCanvas_MouseDown"
+                                        MouseMove="RoiCanvas_MouseMove"
+                                        MouseUp="RoiCanvas_MouseUp"
+                                        Cursor="Cross">
+                                    <Canvas.LayoutTransform>
+                                        <ScaleTransform x:Name="CanvasScale" ScaleX="1.0" ScaleY="1.0"/>
+                                    </Canvas.LayoutTransform>
+                                    <Image x:Name="PreviewImage" Stretch="None"/>
+                                    <Canvas x:Name="OverlayCanvas"/>
+                                </Canvas>
+                            </ScrollViewer>
+                        </Border>
+
+                        <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" Background="Transparent"/>
+
+                        <!-- 右側: 領域リスト -->
+                        <Border Grid.Column="2" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4" Padding="10">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="*"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Text="【指定領域（ROI）リスト】" FontWeight="Bold" FontSize="14" Foreground="#333333"/>
+                                <TextBlock x:Name="TxtRoiStatus" Grid.Row="1" Text="表示中: ベース画像 (0 件)" Foreground="#0078D4" Margin="0,4,0,8"/>
+
+                                <DataGrid x:Name="DgRoiList" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False"
+                                          SelectionMode="Single" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                          Background="White" RowHeaderWidth="0"
+                                          PreviewKeyDown="DgRoiList_PreviewKeyDown"
+                                          SelectionChanged="DgRoiList_SelectionChanged">
+                                    <DataGrid.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="▲ 1つ上に移動" Click="BtnUpRoi_Click"/>
+                                            <MenuItem Header="▼ 1つ下に移動" Click="BtnDownRoi_Click"/>
+                                            <Separator/>
+                                            <MenuItem Header="🔤 文字列比較に設定" Click="BtnSetSelectedText_Click"/>
+                                            <MenuItem Header="🖼 画像比較に設定" Click="BtnSetSelectedImage_Click"/>
+                                            <Separator/>
+                                            <MenuItem Header="🗑 選択行を削除 (Del)" Click="BtnDeleteSelectedRoi_Click"/>
+                                        </ContextMenu>
+                                    </DataGrid.ContextMenu>
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="32" IsReadOnly="True"/>
+                                        <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="80"/>
+                                        <DataGridTemplateColumn Header="比較方式" Width="90">
+                                            <DataGridTemplateColumn.CellTemplate>
+                                                <DataTemplate>
+                                                    <TextBlock Text="{Binding CompareTypeDisplayName}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellTemplate>
+                                            <DataGridTemplateColumn.CellEditingTemplate>
+                                                <DataTemplate>
+                                                    <ComboBox SelectedValue="{Binding CompareType, UpdateSourceTrigger=PropertyChanged}"
+                                                              SelectedValuePath="Tag" SelectionChanged="RoiCompareType_SelectionChanged">
+                                                        <ComboBoxItem Content="🔤 文字列" Tag="{x:Static models:RoiCompareType.Text}"/>
+                                                        <ComboBoxItem Content="🖼 画像" Tag="{x:Static models:RoiCompareType.Image}"/>
+                                                    </ComboBox>
+                                                </DataTemplate>
+                                            </DataGridTemplateColumn.CellEditingTemplate>
+                                        </DataGridTemplateColumn>
+                                        <DataGridTextColumn Header="前処理" Binding="{Binding PreprocessSummary}" Width="80" IsReadOnly="True"/>
+                                        <DataGridTextColumn Header="X" Binding="{Binding X}" Width="38"/>
+                                        <DataGridTextColumn Header="Y" Binding="{Binding Y}" Width="38"/>
+                                        <DataGridTextColumn Header="幅" Binding="{Binding Width}" Width="38"/>
+                                        <DataGridTextColumn Header="高" Binding="{Binding Height}" Width="38"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+
+                                <StackPanel Grid.Row="3" Margin="0,6,0,0">
+                                    <WrapPanel>
+                                        <Button Content="▲ 上へ" Style="{StaticResource SecondaryButton}" Width="60" Click="BtnUpRoi_Click"/>
+                                        <Button Content="▼ 下へ" Style="{StaticResource SecondaryButton}" Width="60" Click="BtnDownRoi_Click"/>
+                                        <Button Content="↕ Y座標順ソート" Style="{StaticResource SecondaryButton}" Click="BtnSortRoisByY_Click"/>
+                                    </WrapPanel>
+                                    <WrapPanel Margin="0,3,0,0">
+                                        <Button Content="🔤 選択を文字列比較に" Style="{StaticResource SecondaryButton}" Click="BtnSetSelectedText_Click"/>
+                                        <Button Content="🖼 選択を画像比較に" Style="{StaticResource SecondaryButton}" Click="BtnSetSelectedImage_Click"/>
+                                    </WrapPanel>
+                                    <WrapPanel Margin="0,3,0,0">
+                                        <Button Content="選択行削除 (Del)" Style="{StaticResource SecondaryButton}" Click="BtnDeleteSelectedRoi_Click"/>
+                                        <Button Content="全クリア" Style="{StaticResource SecondaryButton}" Click="BtnClearRois_Click"/>
+                                    </WrapPanel>
+
+                                    <!-- 選択領域の前処理設定エリア (領域ID毎) -->
+                                    <Border Background="#F7F3FA" BorderBrush="#D1C4E9" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,6,0,0">
+                                        <StackPanel>
+                                            <TextBlock x:Name="TxtSelectedRoiPreprocessTitle" Text="【領域ごとの前処理設定】領域を選択してください" FontWeight="SemiBold" Foreground="#6A1B9A" Margin="0,0,0,4"/>
+                                            <CheckBox x:Name="ChkRoiPreprocessEnabled" Content="この領域に前処理を適用" FontWeight="Bold" Margin="0,2,0,4" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
+                                            
+                                            <WrapPanel x:Name="PanelRoiPreprocessOptions" IsEnabled="{Binding ElementName=ChkRoiPreprocessEnabled, Path=IsChecked}">
+                                                <CheckBox x:Name="ChkRoiPreprocessContrast" Content="コントラスト強調" Margin="0,2,8,2" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
+                                                <CheckBox x:Name="ChkRoiPreprocessGrayscale" Content="グレースケール" IsChecked="True" Margin="0,2,8,2" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
+                                                <CheckBox x:Name="ChkRoiPreprocessBinarize" Content="二値化" Margin="0,2,4,2" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
+                                                <StackPanel Orientation="Horizontal" Margin="0,2,8,2">
+                                                    <TextBlock Text="閾値:" VerticalAlignment="Center" Margin="0,0,2,0" FontSize="11"/>
+                                                    <TextBox x:Name="TxtRoiBinarizeThreshold" Text="128" Width="32" TextAlignment="Center" FontSize="11" TextChanged="RoiPreprocess_Changed"/>
+                                                </StackPanel>
+                                                <CheckBox x:Name="ChkRoiPreprocessSharpen" Content="輪郭強調" Margin="0,2,8,2" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
+                                            </WrapPanel>
+
+                                            <Button Content="⚙ この前処理をすべての領域にコピー" Style="{StaticResource SecondaryButton}" Margin="0,4,0,0" HorizontalAlignment="Left" Click="BtnCopyPreprocessToAll_Click"/>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <TextBlock Text="※領域を選択して前処理を個別に設定できます。未選択領域には全体前処理が適用されます。" Foreground="#888888" FontSize="11" Margin="2,4,0,0" TextWrapping="Wrap"/>
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <!-- タブ2: フォルダ比較＆結果 -->
+            <TabItem Header="  🔍 2. フォルダペア設定・比較実行  " FontWeight="SemiBold" Padding="12,8">
+                <Grid Margin="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- フォルダ設定エリア -->
+                    <Border Grid.Row="0" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4" Padding="12" Margin="0,0,0,8">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="150"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="90"/>
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="ベース画像フォルダ:" VerticalAlignment="Center" Margin="0,4"/>
+                            <TextBox x:Name="TxtBaseDir" Grid.Row="0" Grid.Column="1" VerticalAlignment="Center" Margin="4"/>
+                            <Button Grid.Row="0" Grid.Column="2" Content="参照..." Style="{StaticResource SecondaryButton}" Click="BtnBrowseBaseDir_Click"/>
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="ターゲット画像フォルダ:" VerticalAlignment="Center" Margin="0,4"/>
+                            <TextBox x:Name="TxtTargetDir" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Margin="4"/>
+                            <Button Grid.Row="1" Grid.Column="2" Content="参照..." Style="{StaticResource SecondaryButton}" Click="BtnBrowseTargetDir_Click"/>
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="ペアリング関数 (ルール):" VerticalAlignment="Center" Margin="0,4"/>
+                            <Grid Grid.Row="2" Grid.Column="1" Margin="4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <ComboBox x:Name="ComboMatchingRules" Grid.Column="0" VerticalAlignment="Center" DisplayMemberPath="DisplayName"/>
+                                <Button Grid.Column="1" Content="📂 ルール読込 (JSON)..." Style="{StaticResource SecondaryButton}" Margin="6,0,0,0" Click="BtnLoadMatchingRulesJson_Click"/>
+                            </Grid>
+                            <Button Grid.Row="2" Grid.Column="2" Content="🔄 スキャン" Style="{StaticResource SecondaryButton}" Click="BtnScanPairs_Click"/>
+
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="OCR エンジン:" VerticalAlignment="Center" Margin="0,4"/>
+                            <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="4">
+                                <ComboBox x:Name="ComboOcrEngine" Width="280" VerticalAlignment="Center" SelectionChanged="ComboOcrEngine_SelectionChanged">
+                                    <ComboBoxItem Content="Windows 11 標準 OCR (WinRT)" Tag="WinRT"/>
+                                    <ComboBoxItem x:Name="ComboItemTesseract" Content="Tesseract OCR" Tag="Tesseract"/>
+                                </ComboBox>
+                                <TextBlock x:Name="TxtOcrStatus" Text="利用可能" Foreground="#107C41" VerticalAlignment="Center" Margin="10,0,0,0" FontSize="11"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- オプション ＆ アクションバー -->
+                    <Border Grid.Row="1" Background="#EEF4FA" BorderBrush="#CCE0F5" BorderThickness="1" CornerRadius="4" Padding="10" Margin="0,0,0,8">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- 上段: 比較テキスト正規化設定 -->
+                            <WrapPanel Grid.Row="0" Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Text="【比較判定】" FontWeight="SemiBold" Foreground="#005A9E" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <CheckBox x:Name="ChkIgnoreWhitespace" Content="空白・改行を無視" IsChecked="True" Margin="6,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkCaseSensitive" Content="大文字小文字を区別" Margin="6,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkNumbersOnly" Content="数値のみ抽出比較" Margin="6,0" VerticalAlignment="Center"/>
+                            </WrapPanel>
+
+                            <!-- アクションボタン -->
+                            <StackPanel Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="📊 CSVエクスポート" Style="{StaticResource SecondaryButton}" Click="BtnExportCsv_Click"/>
+                                <Button Content="📑 詳細エクスポート (Excel/MD)" Style="{StaticResource SecondaryButton}" Click="BtnExportDetail_Click"/>
+                                <Button x:Name="BtnRunCompare" Content="▶ 比較を実行" Style="{StaticResource ActionButton}" Click="BtnRunCompare_Click"/>
+                            </StackPanel>
+
+                            <!-- 下段: 画像前処理オプション -->
+                            <WrapPanel Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,6,0,0">
+                                <TextBlock Text="【画像前処理】" FontWeight="SemiBold" Foreground="#8E24AA" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <CheckBox x:Name="ChkEnablePreprocess" Content="前処理を適用" Margin="6,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                <CheckBox x:Name="ChkPreprocessGrayscale" Content="グレースケール" IsChecked="True" Margin="6,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkPreprocessContrast" Content="コントラスト強調" IsChecked="True" Margin="6,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkPreprocessBinarize" Content="二値化 (白黒化)" Margin="6,0" VerticalAlignment="Center"/>
+                                <CheckBox x:Name="ChkPreprocessSharpen" Content="輪郭強調" Margin="6,0" VerticalAlignment="Center"/>
+                            </WrapPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- 結果エリア (左右分割) -->
+                    <Grid Grid.Row="2">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+
+                        <!-- プログレスバー -->
+                        <ProgressBar x:Name="CompareProgressBar" Grid.Row="0" Height="8" Margin="0,0,0,6" Visibility="Collapsed"/>
+
+                        <Grid Grid.Row="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="1.2*"/>
+                                <ColumnDefinition Width="5"/>
+                                <ColumnDefinition Width="2*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <!-- 左側: ペア一覧 -->
+                            <Border Grid.Column="0" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4" Padding="8">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Text="【比較ペア一覧】" FontWeight="Bold" Margin="0,0,0,4"/>
+                                    <DataGrid x:Name="DgPairs" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False"
+                                              IsReadOnly="True" SelectionMode="Single" HeadersVisibility="Column"
+                                              GridLinesVisibility="Horizontal" Background="White"
+                                              SelectionChanged="DgPairs_SelectionChanged">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="判定" Binding="{Binding StatusText}" Width="65">
+                                                <DataGridTextColumn.ElementStyle>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="FontWeight" Value="Bold"/>
+                                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                                        <Style.Triggers>
+                                                            <Trigger Property="Text" Value="PASS">
+                                                                <Setter Property="Foreground" Value="#107C41"/>
+                                                            </Trigger>
+                                                            <Trigger Property="Text" Value="FAIL">
+                                                                <Setter Property="Foreground" Value="#D83B01"/>
+                                                            </Trigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </DataGridTextColumn.ElementStyle>
+                                            </DataGridTextColumn>
+                                            <DataGridTextColumn Header="ペア名" Binding="{Binding PairName}" Width="150"/>
+                                            <DataGridTextColumn Header="Baseファイル" Binding="{Binding BaseFileName}" Width="120"/>
+                                            <DataGridTextColumn Header="Targetファイル" Binding="{Binding TargetFileName}" Width="120"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Border>
+
+                            <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" Background="Transparent"/>
+
+                            <!-- 右側: 選択したペアの領域別詳細 -->
+                            <Border Grid.Column="2" Background="White" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4" Padding="8">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <TextBlock Grid.Row="0" Text="【領域別 比較詳細】" FontWeight="Bold" Margin="0,0,0,4"/>
+
+                                    <DataGrid x:Name="DgRegionDetails" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False"
+                                              IsReadOnly="True" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                              Background="White">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="判定" Binding="{Binding StatusText}" Width="75">
+                                                <DataGridTextColumn.ElementStyle>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="FontWeight" Value="Bold"/>
+                                                        <Setter Property="HorizontalAlignment" Value="Center"/>
+                                                        <Style.Triggers>
+                                                            <Trigger Property="Text" Value="一致 (OK)">
+                                                                <Setter Property="Foreground" Value="#107C41"/>
+                                                            </Trigger>
+                                                            <Trigger Property="Text" Value="不一致 (NG)">
+                                                                <Setter Property="Foreground" Value="#D83B01"/>
+                                                            </Trigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </DataGridTextColumn.ElementStyle>
+                                            </DataGridTextColumn>
+                                            <DataGridTextColumn Header="方式" Binding="{Binding CompareTypeDisplayName}" Width="75"/>
+                                            <DataGridTextColumn Header="領域名" Binding="{Binding RegionName}" Width="110"/>
+                                            <DataGridTextColumn Header="Base 内容 / サイズ" Binding="{Binding BaseTextRaw}" Width="*"/>
+                                            <DataGridTextColumn Header="Target 内容 / 差異" Binding="{Binding TargetTextRaw}" Width="*"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+
+                                    <!-- 選択ペアのステータス情報 -->
+                                    <TextBlock x:Name="TxtPairSummary" Grid.Row="2" Margin="0,6,0,0" Foreground="#666666" Text="左の一覧からペアを選択すると詳細が表示されます。"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>

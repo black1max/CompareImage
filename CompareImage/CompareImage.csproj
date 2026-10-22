@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ClosedXML" Version="0.105.1" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.9.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\PairMatchRule.json" Link="PairMatchRule.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\PairMatchRurl.json" Link="PairMatchRurl.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <!-- ソリューションフォルダーまたはプロジェクト直下に Tesseract フォルダーが存在する場合、出力先 (exe直下) へ自動配置 -->
+  <ItemGroup Condition="Exists('..\Tesseract')">
+    <None Include="..\Tesseract\**\*" Link="Tesseract\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup Condition="!Exists('..\Tesseract') And Exists('Tesseract')">
+    <None Include="Tesseract\**\*" Link="Tesseract\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

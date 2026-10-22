@@ -1,0 +1,57 @@
+## Visual Studio / .NET Standard .gitignore
+## Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+## Visual Studio files
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.userprefs
+
+## Visual Studio Code
+.vscode/
+
+## User-specific files
+*.rsuser
+*.suo
+*.user
+*.userprefs
+
+## Package / Dependency cache
+packages/
+*.nuget.props
+*.nuget.targets
+project.lock.json
+project.assets.json
+
+# セキュリティ・プライバシー除外設定
+*.pfx
+*.key
+*.cer
+*.pem
+*.crt
+.env
+*.local.*
+*.secret.*
+secrets.json
+remote_settings.json
+logs/
+*.log
+downloaded_images/
+demo_samples/
+temp_crops/
+Output/

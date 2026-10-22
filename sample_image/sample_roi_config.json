@@ -1,0 +1,78 @@
+{
+  "baseImageRoi": [
+    {
+      "id": 1,
+      "name": "商品名",
+      "x": 40,
+      "y": 100,
+      "width": 340,
+      "height": 55,
+      "compareType": 0
+    },
+    {
+      "id": 2,
+      "name": "伝票番号",
+      "x": 400,
+      "y": 100,
+      "width": 200,
+      "height": 55,
+      "compareType": 0
+    },
+    {
+      "id": 3,
+      "name": "合計金額",
+      "x": 40,
+      "y": 180,
+      "width": 340,
+      "height": 55,
+      "compareType": 0
+    },
+    {
+      "id": 4,
+      "name": "認証アイコン",
+      "x": 400,
+      "y": 180,
+      "width": 100,
+      "height": 100,
+      "compareType": 1
+    }
+  ],
+  "targetImageRoi": [
+    {
+      "id": 1,
+      "name": "商品名",
+      "x": 40,
+      "y": 100,
+      "width": 340,
+      "height": 55,
+      "compareType": 0
+    },
+    {
+      "id": 2,
+      "name": "伝票番号",
+      "x": 400,
+      "y": 100,
+      "width": 200,
+      "height": 55,
+      "compareType": 0
+    },
+    {
+      "id": 3,
+      "name": "合計金額",
+      "x": 40,
+      "y": 180,
+      "width": 340,
+      "height": 55,
+      "compareType": 0
+    },
+    {
+      "id": 4,
+      "name": "認証アイコン",
+      "x": 400,
+      "y": 180,
+      "width": 100,
+      "height": 100,
+      "compareType": 1
+    }
+  ]
+}

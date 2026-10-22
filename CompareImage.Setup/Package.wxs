@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package Name="画像領域OCR比較ツール (CompareImage)"
+           Manufacturer="CompareImage Project"
+           Version="1.0.0.0"
+           UpgradeCode="A3E5F8B1-7C2D-4F9A-9E1B-5D3C7E9A2F4B"
+           Language="1041"
+           Codepage="932"
+           Scope="perMachine">
+
+    <MajorUpgrade DowngradeErrorMessage="新しいバージョンの [ProductName] が既にインストールされています。" />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- インストール先ディレクトリ構造 -->
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="CompareImage">
+        <Directory Id="TESSERACTFOLDER" Name="Tesseract">
+          <Directory Id="TESSDATAFOLDER" Name="tessdata" />
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="CompareImage" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="DesktopFolder" />
+
+    <!-- メインコンポーネント -->
+    <ComponentGroup Id="ProductComponents">
+      <Component Directory="INSTALLFOLDER" Guid="B8C4E2D1-5A3F-4C9E-8D1A-7F2E9B4C5D3A">
+        <File Id="CompareImageExe" Source="$(var.CompareImage.TargetDir)CompareImage.exe" KeyPath="yes">
+          <!-- スタートメニューショートカット -->
+          <Shortcut Id="AppStartMenuShortcut"
+                    Directory="ApplicationProgramsFolder"
+                    Name="CompareImage"
+                    Description="画像領域OCR・画像比較ツール"
+                    WorkingDirectory="INSTALLFOLDER"
+                    Advertise="yes" />
+          <!-- デスクトップショートカット -->
+          <Shortcut Id="AppDesktopShortcut"
+                    Directory="DesktopFolder"
+                    Name="CompareImage"
+                    Description="画像領域OCR・画像比較ツール"
+                    WorkingDirectory="INSTALLFOLDER"
+                    Advertise="yes" />
+        </File>
+        <File Source="$(var.CompareImage.TargetDir)CompareImage.dll" />
+        <File Source="$(var.CompareImage.TargetDir)CompareImage.runtimeconfig.json" />
+        <File Source="$(var.CompareImage.TargetDir)CompareImage.deps.json" />
+        <File Source="$(var.CompareImage.TargetDir)ClosedXML.dll" />
+        <File Source="$(var.CompareImage.TargetDir)DocumentFormat.OpenXml.dll" />
+        <File Source="$(var.CompareImage.TargetDir)ExcelNumberFormat.dll" />
+        <File Source="$(var.CompareImage.TargetDir)SixLabors.Fonts.dll" />
+        <File Source="$(var.CompareImage.TargetDir)RBush.dll" />
+        <File Source="$(var.CompareImage.TargetDir)Microsoft.CodeAnalysis.CSharp.Scripting.dll" />
+        <File Source="$(var.CompareImage.TargetDir)Microsoft.CodeAnalysis.CSharp.dll" />
+        <File Source="$(var.CompareImage.TargetDir)Microsoft.CodeAnalysis.Scripting.dll" />
+        <File Source="$(var.CompareImage.TargetDir)Microsoft.CodeAnalysis.dll" />
+        <File Source="$(var.CompareImage.TargetDir)Microsoft.Windows.SDK.NET.dll" />
+        <File Source="$(var.CompareImage.TargetDir)WinRT.Runtime.dll" />
+        <File Source="$(var.CompareImage.TargetDir)PairMatchRule.json" />
+        <File Source="$(var.CompareImage.TargetDir)PairMatchRurl.json" />
+      </Component>
+
+      <!-- ショートカット削除管理コンポーネント -->
+      <Component Directory="ApplicationProgramsFolder" Guid="C1D2E3F4-A5B6-4C7D-8E9F-0A1B2C3D4E5F">
+        <RemoveFolder Id="CleanUpShortCut" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\CompareImage" Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <!-- Tesseract-OCR 同梱コンポーネント群 (ビルドスクリプトまたはハーベスティングで配置) -->
+    <ComponentGroup Id="TesseractComponents" Directory="TESSERACTFOLDER">
+      <Files Include="$(var.CompareImage.TargetDir)Tesseract\**\*" />
+    </ComponentGroup>
+
+    <Feature Id="ProductFeature" Title="CompareImage" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="TesseractComponents" />
+    </Feature>
+  </Package>
+</Wix>

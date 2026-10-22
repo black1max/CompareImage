@@ -1,0 +1,13 @@
+<Project Sdk="WixToolset.Sdk/5.0.0">
+  <PropertyGroup>
+    <OutputType>Package</OutputType>
+    <OutputName>CompareImage_Setup_x64</OutputName>
+    <Platform>x64</Platform>
+    <Nullable>enable</Nullable>
+    <InstallerVersion>500</InstallerVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CompareImage\CompareImage.csproj" />
+  </ItemGroup>
+</Project>

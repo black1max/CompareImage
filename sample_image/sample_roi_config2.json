@@ -1,0 +1,142 @@
+{
+  "baseImageRoi": [
+    {
+      "id": 1,
+      "name": "商品名",
+      "x": 40,
+      "y": 100,
+      "width": 340,
+      "height": 55,
+      "compareType": 0,
+      "preprocess": {
+        "enabled": false,
+        "toGrayscale": true,
+        "enhanceContrast": false,
+        "binarize": false,
+        "binarizeThreshold": 128,
+        "sharpen": false
+      }
+    },
+    {
+      "id": 2,
+      "name": "伝票番号",
+      "x": 400,
+      "y": 100,
+      "width": 200,
+      "height": 55,
+      "compareType": 0,
+      "preprocess": {
+        "enabled": true,
+        "toGrayscale": true,
+        "enhanceContrast": false,
+        "binarize": true,
+        "binarizeThreshold": 128,
+        "sharpen": false
+      }
+    },
+    {
+      "id": 3,
+      "name": "合計金額",
+      "x": 40,
+      "y": 180,
+      "width": 340,
+      "height": 55,
+      "compareType": 0,
+      "preprocess": {
+        "enabled": false,
+        "toGrayscale": true,
+        "enhanceContrast": false,
+        "binarize": false,
+        "binarizeThreshold": 128,
+        "sharpen": false
+      }
+    },
+    {
+      "id": 4,
+      "name": "認証アイコン",
+      "x": 400,
+      "y": 180,
+      "width": 100,
+      "height": 100,
+      "compareType": 1,
+      "preprocess": {
+        "enabled": false,
+        "toGrayscale": true,
+        "enhanceContrast": false,
+        "binarize": false,
+        "binarizeThreshold": 128,
+        "sharpen": false
+      }
+    }
+  ],
+  "targetImageRoi": [
+    {
+      "id": 1,
+      "name": "商品名",
+      "x": 40,
+      "y": 100,
+      "width": 340,
+      "height": 55,
+      "compareType": 0,
+      "preprocess": {
+        "enabled": false,
+        "toGrayscale": true,
+        "enhanceContrast": false,
+        "binarize": false,
+        "binarizeThreshold": 128,
+        "sharpen": false
+      }
+    },
+    {
+      "id": 2,
+      "name": "伝票番号",
+      "x": 400,
+      "y": 100,
+      "width": 200,
+      "height": 55,
+      "compareType": 0,
+      "preprocess": {
+        "enabled": false,
+        "toGrayscale": true,
+        "enhanceContrast": false,
+        "binarize": false,
+        "binarizeThreshold": 128,
+        "sharpen": false
+      }
+    },
+    {
+      "id": 3,
+      "name": "合計金額",
+      "x": 40,
+      "y": 180,
+      "width": 340,
+      "height": 55,
+      "compareType": 0,
+      "preprocess": {
+        "enabled": false,
+        "toGrayscale": true,
+        "enhanceContrast": false,
+        "binarize": false,
+        "binarizeThreshold": 128,
+        "sharpen": false
+      }
+    },
+    {
+      "id": 4,
+      "name": "認証アイコン",
+      "x": 400,
+      "y": 180,
+      "width": 100,
+      "height": 100,
+      "compareType": 1,
+      "preprocess": {
+        "enabled": false,
+        "toGrayscale": true,
+        "enhanceContrast": false,
+        "binarize": false,
+        "binarizeThreshold": 128,
+        "sharpen": false
+      }
+    }
+  ]
+}

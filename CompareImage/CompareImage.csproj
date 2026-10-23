@@ -15,7 +15,7 @@
 
   <ItemGroup>
     <None Include="..\PairMatchRule.json" Link="PairMatchRule.json" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\PairMatchRurl.json" Link="PairMatchRurl.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Condition="Exists('..\PairMatchRurl.json')" Include="..\PairMatchRurl.json" Link="PairMatchRurl.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <!-- ソリューションフォルダーまたはプロジェクト直下に Tesseract フォルダーが存在する場合、出力先 (exe直下) へ自動配置 -->

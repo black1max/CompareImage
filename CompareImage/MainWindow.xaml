@@ -7,7 +7,8 @@
         mc:Ignorable="d"
         Title="画像領域OCR/画像文字列比較ツール (Windows 11 標準 OCR &amp; ピクセル比較)" Height="800" Width="1240"
         WindowStartupLocation="CenterScreen"
-        FontFamily="Segoe UI, Yu Gothic UI" FontSize="13">
+        FontFamily="Segoe UI, Yu Gothic UI" FontSize="13"
+        PreviewKeyDown="Window_PreviewKeyDown">
 
     <Window.Icon>
         <DrawingImage>
@@ -165,11 +166,13 @@
                         <MenuItem Header="🧹 すべての領域をクリア(_A)" Click="BtnClearRois_Click"/>
                         <Separator/>
                         <MenuItem Header="🔤 すべての領域を「文字列比較」に設定" Click="MenuSetAllTextMode_Click"/>
+                        <MenuItem Header="🔢 すべての領域を「数値比較」に設定" Click="MenuSetAllNumberMode_Click"/>
                         <MenuItem Header="🖼 すべての領域を「画像比較」に設定" Click="MenuSetAllImageMode_Click"/>
                     </MenuItem>
                     <MenuItem Header="比較(_C)">
                         <MenuItem Header="🔄 画像ペアをスキャン(_S)" Click="BtnScanPairs_Click"/>
-                        <MenuItem Header="▶ 比較を実行(_R)" Click="BtnRunCompare_Click"/>
+                        <MenuItem x:Name="MenuRunCompare" Header="▶ 比較を実行(_R)" Click="BtnRunCompare_Click"/>
+                        <MenuItem x:Name="MenuCancelCompare" Header="⏹ 比較を中断(_C)" Click="BtnCancelCompare_Click" IsEnabled="False"/>
                         <Separator/>
                         <MenuItem Header="📂 外部ペアマッチングルール読込 (JSON)..." Click="BtnLoadMatchingRulesJson_Click"/>
                         <Separator/>
@@ -234,7 +237,7 @@
                         <!-- 左側: 画像キャンバス -->
                         <Border Grid.Column="0" Background="#2B2B2B" BorderBrush="#CCCCCC" BorderThickness="1" CornerRadius="4">
                             <ScrollViewer x:Name="ImageScrollViewer" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                                <Canvas x:Name="RoiCanvas" Background="Transparent"
+                                <Canvas x:Name="RoiCanvas" Background="Transparent" Focusable="True"
                                         MouseDown="RoiCanvas_MouseDown"
                                         MouseMove="RoiCanvas_MouseMove"
                                         MouseUp="RoiCanvas_MouseUp"
@@ -265,8 +268,7 @@
 
                                 <DataGrid x:Name="DgRoiList" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False"
                                           SelectionMode="Single" HeadersVisibility="Column" GridLinesVisibility="Horizontal"
-                                          Background="White" RowHeaderWidth="0"
-                                          PreviewKeyDown="DgRoiList_PreviewKeyDown"
+                                          Background="White" RowHeaderWidth="0" MinHeight="260"
                                           SelectionChanged="DgRoiList_SelectionChanged">
                                     <DataGrid.ContextMenu>
                                         <ContextMenu>
@@ -274,6 +276,7 @@
                                             <MenuItem Header="▼ 1つ下に移動" Click="BtnDownRoi_Click"/>
                                             <Separator/>
                                             <MenuItem Header="🔤 文字列比較に設定" Click="BtnSetSelectedText_Click"/>
+                                            <MenuItem Header="🔢 数値比較に設定" Click="BtnSetSelectedNumber_Click"/>
                                             <MenuItem Header="🖼 画像比較に設定" Click="BtnSetSelectedImage_Click"/>
                                             <Separator/>
                                             <MenuItem Header="🗑 選択行を削除 (Del)" Click="BtnDeleteSelectedRoi_Click"/>
@@ -282,7 +285,7 @@
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="ID" Binding="{Binding Id}" Width="32" IsReadOnly="True"/>
                                         <DataGridTextColumn Header="名称" Binding="{Binding Name}" Width="80"/>
-                                        <DataGridTemplateColumn Header="比較方式" Width="90">
+                                        <DataGridTemplateColumn Header="比較方式" Width="95">
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <TextBlock Text="{Binding CompareTypeDisplayName}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
@@ -293,56 +296,73 @@
                                                     <ComboBox SelectedValue="{Binding CompareType, UpdateSourceTrigger=PropertyChanged}"
                                                               SelectedValuePath="Tag" SelectionChanged="RoiCompareType_SelectionChanged">
                                                         <ComboBoxItem Content="🔤 文字列" Tag="{x:Static models:RoiCompareType.Text}"/>
+                                                        <ComboBoxItem Content="🔢 数値" Tag="{x:Static models:RoiCompareType.Number}"/>
                                                         <ComboBoxItem Content="🖼 画像" Tag="{x:Static models:RoiCompareType.Image}"/>
                                                     </ComboBox>
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellEditingTemplate>
                                         </DataGridTemplateColumn>
-                                        <DataGridTextColumn Header="前処理" Binding="{Binding PreprocessSummary}" Width="80" IsReadOnly="True"/>
-                                        <DataGridTextColumn Header="X" Binding="{Binding X}" Width="38"/>
-                                        <DataGridTextColumn Header="Y" Binding="{Binding Y}" Width="38"/>
-                                        <DataGridTextColumn Header="幅" Binding="{Binding Width}" Width="38"/>
-                                        <DataGridTextColumn Header="高" Binding="{Binding Height}" Width="38"/>
+                                        <DataGridTextColumn Header="前処理" Binding="{Binding PreprocessSummary}" Width="75" IsReadOnly="True"/>
+                                        <DataGridTextColumn Header="X" Binding="{Binding X}" Width="42"/>
+                                        <DataGridTextColumn Header="Y" Binding="{Binding Y}" Width="42"/>
+                                        <DataGridTextColumn Header="幅" Binding="{Binding Width}" Width="42"/>
+                                        <DataGridTextColumn Header="高" Binding="{Binding Height}" Width="42"/>
                                     </DataGrid.Columns>
                                 </DataGrid>
 
-                                <StackPanel Grid.Row="3" Margin="0,6,0,0">
-                                    <WrapPanel>
-                                        <Button Content="▲ 上へ" Style="{StaticResource SecondaryButton}" Width="60" Click="BtnUpRoi_Click"/>
-                                        <Button Content="▼ 下へ" Style="{StaticResource SecondaryButton}" Width="60" Click="BtnDownRoi_Click"/>
-                                        <Button Content="↕ Y座標順ソート" Style="{StaticResource SecondaryButton}" Click="BtnSortRoisByY_Click"/>
-                                    </WrapPanel>
-                                    <WrapPanel Margin="0,3,0,0">
-                                        <Button Content="🔤 選択を文字列比較に" Style="{StaticResource SecondaryButton}" Click="BtnSetSelectedText_Click"/>
-                                        <Button Content="🖼 選択を画像比較に" Style="{StaticResource SecondaryButton}" Click="BtnSetSelectedImage_Click"/>
-                                    </WrapPanel>
-                                    <WrapPanel Margin="0,3,0,0">
-                                        <Button Content="選択行削除 (Del)" Style="{StaticResource SecondaryButton}" Click="BtnDeleteSelectedRoi_Click"/>
+                                <StackPanel Grid.Row="3" Margin="0,8,0,0">
+                                    <!-- 選択領域の座標・サイズ入力 (スリム1行バー) -->
+                                    <Border Background="#F0F7FF" BorderBrush="#B8D9F7" BorderThickness="1" CornerRadius="4" Padding="8,6" Margin="0,0,0,6">
+                                        <DockPanel x:Name="PanelRoiAdjust" IsEnabled="False">
+                                            <TextBlock x:Name="TxtRoiAdjustTitle" Text="【選択領域】領域を選択してください" FontWeight="SemiBold" Foreground="#005A9E" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                <TextBlock Text="X:" VerticalAlignment="Center" Margin="4,0,2,0" FontWeight="SemiBold"/>
+                                                <TextBox x:Name="TxtRoiX" Width="42" TextAlignment="Center" TextChanged="TxtRoiCoord_TextChanged"/>
+
+                                                <TextBlock Text="Y:" VerticalAlignment="Center" Margin="6,0,2,0" FontWeight="SemiBold"/>
+                                                <TextBox x:Name="TxtRoiY" Width="42" TextAlignment="Center" TextChanged="TxtRoiCoord_TextChanged"/>
+
+                                                <TextBlock Text="幅:" VerticalAlignment="Center" Margin="6,0,2,0" FontWeight="SemiBold"/>
+                                                <TextBox x:Name="TxtRoiW" Width="42" TextAlignment="Center" TextChanged="TxtRoiCoord_TextChanged"/>
+
+                                                <TextBlock Text="高:" VerticalAlignment="Center" Margin="6,0,2,0" FontWeight="SemiBold"/>
+                                                <TextBox x:Name="TxtRoiH" Width="42" TextAlignment="Center" TextChanged="TxtRoiCoord_TextChanged"/>
+                                            </StackPanel>
+                                        </DockPanel>
+                                    </Border>
+
+                                    <!-- 操作ボタンバー -->
+                                    <WrapPanel Margin="0,0,0,4">
+                                        <Button Content="▲ 上へ" Style="{StaticResource SecondaryButton}" Click="BtnUpRoi_Click"/>
+                                        <Button Content="▼ 下へ" Style="{StaticResource SecondaryButton}" Click="BtnDownRoi_Click"/>
+                                        <Button Content="↕ Y順ソート" Style="{StaticResource SecondaryButton}" Click="BtnSortRoisByY_Click"/>
+                                        <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="4,0"/>
+                                        <Button Content="🔤 文字列" Style="{StaticResource SecondaryButton}" Click="BtnSetSelectedText_Click"/>
+                                        <Button Content="🔢 数値" Style="{StaticResource SecondaryButton}" Click="BtnSetSelectedNumber_Click"/>
+                                        <Button Content="🖼 画像" Style="{StaticResource SecondaryButton}" Click="BtnSetSelectedImage_Click"/>
+                                        <Separator Style="{StaticResource {x:Static ToolBar.SeparatorStyleKey}}" Margin="4,0"/>
+                                        <Button Content="🗑 削除 (Del)" Style="{StaticResource SecondaryButton}" Click="BtnDeleteSelectedRoi_Click"/>
                                         <Button Content="全クリア" Style="{StaticResource SecondaryButton}" Click="BtnClearRois_Click"/>
                                     </WrapPanel>
 
                                     <!-- 選択領域の前処理設定エリア (領域ID毎) -->
-                                    <Border Background="#F7F3FA" BorderBrush="#D1C4E9" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,6,0,0">
+                                    <Border Background="#F7F3FA" BorderBrush="#D1C4E9" BorderThickness="1" CornerRadius="4" Padding="6" Margin="0,2,0,0">
                                         <StackPanel>
-                                            <TextBlock x:Name="TxtSelectedRoiPreprocessTitle" Text="【領域ごとの前処理設定】領域を選択してください" FontWeight="SemiBold" Foreground="#6A1B9A" Margin="0,0,0,4"/>
-                                            <CheckBox x:Name="ChkRoiPreprocessEnabled" Content="この領域に前処理を適用" FontWeight="Bold" Margin="0,2,0,4" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
+                                            <DockPanel Margin="0,0,0,2">
+                                                <TextBlock x:Name="TxtSelectedRoiPreprocessTitle" Text="【前処理設定】領域を選択してください" FontWeight="SemiBold" Foreground="#6A1B9A" VerticalAlignment="Center"/>
+                                                <CheckBox x:Name="ChkRoiPreprocessEnabled" Content="個別前処理を適用" FontWeight="Bold" HorizontalAlignment="Right" VerticalAlignment="Center" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
+                                            </DockPanel>
                                             
                                             <WrapPanel x:Name="PanelRoiPreprocessOptions" IsEnabled="{Binding ElementName=ChkRoiPreprocessEnabled, Path=IsChecked}">
-                                                <CheckBox x:Name="ChkRoiPreprocessContrast" Content="コントラスト強調" Margin="0,2,8,2" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
-                                                <CheckBox x:Name="ChkRoiPreprocessGrayscale" Content="グレースケール" IsChecked="True" Margin="0,2,8,2" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
-                                                <CheckBox x:Name="ChkRoiPreprocessBinarize" Content="二値化" Margin="0,2,4,2" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
-                                                <StackPanel Orientation="Horizontal" Margin="0,2,8,2">
-                                                    <TextBlock Text="閾値:" VerticalAlignment="Center" Margin="0,0,2,0" FontSize="11"/>
-                                                    <TextBox x:Name="TxtRoiBinarizeThreshold" Text="128" Width="32" TextAlignment="Center" FontSize="11" TextChanged="RoiPreprocess_Changed"/>
-                                                </StackPanel>
-                                                <CheckBox x:Name="ChkRoiPreprocessSharpen" Content="輪郭強調" Margin="0,2,8,2" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
+                                                <CheckBox x:Name="ChkRoiPreprocessGrayscale" Content="グレー" IsChecked="True" Margin="0,2,6,2" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
+                                                <CheckBox x:Name="ChkRoiPreprocessContrast" Content="コントラスト" Margin="0,2,6,2" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
+                                                <CheckBox x:Name="ChkRoiPreprocessBinarize" Content="二値化" Margin="0,2,2,2" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
+                                                <TextBox x:Name="TxtRoiBinarizeThreshold" Text="128" Width="30" TextAlignment="Center" FontSize="11" Margin="0,2,6,2" TextChanged="RoiPreprocess_Changed"/>
+                                                <CheckBox x:Name="ChkRoiPreprocessSharpen" Content="輪郭強調" Margin="0,2,6,2" Checked="RoiPreprocess_Changed" Unchecked="RoiPreprocess_Changed"/>
+                                                <Button Content="⚙ 全領域にコピー" Style="{StaticResource SecondaryButton}" Padding="4,1" FontSize="11" Click="BtnCopyPreprocessToAll_Click"/>
                                             </WrapPanel>
-
-                                            <Button Content="⚙ この前処理をすべての領域にコピー" Style="{StaticResource SecondaryButton}" Margin="0,4,0,0" HorizontalAlignment="Left" Click="BtnCopyPreprocessToAll_Click"/>
                                         </StackPanel>
                                     </Border>
-
-                                    <TextBlock Text="※領域を選択して前処理を個別に設定できます。未選択領域には全体前処理が適用されます。" Foreground="#888888" FontSize="11" Margin="2,4,0,0" TextWrapping="Wrap"/>
                                 </StackPanel>
                             </Grid>
                         </Border>
@@ -429,6 +449,7 @@
                                 <Button Content="📊 CSVエクスポート" Style="{StaticResource SecondaryButton}" Click="BtnExportCsv_Click"/>
                                 <Button Content="📑 詳細エクスポート (Excel/MD)" Style="{StaticResource SecondaryButton}" Click="BtnExportDetail_Click"/>
                                 <Button x:Name="BtnRunCompare" Content="▶ 比較を実行" Style="{StaticResource ActionButton}" Click="BtnRunCompare_Click"/>
+                                <Button x:Name="BtnCancelCompare" Content="⏹ 中断" Style="{StaticResource SecondaryButton}" Click="BtnCancelCompare_Click" IsEnabled="False"/>
                             </StackPanel>
 
                             <!-- 下段: 画像前処理オプション -->
@@ -450,8 +471,11 @@
                             <RowDefinition Height="*"/>
                         </Grid.RowDefinitions>
 
-                        <!-- プログレスバー -->
-                        <ProgressBar x:Name="CompareProgressBar" Grid.Row="0" Height="8" Margin="0,0,0,6" Visibility="Collapsed"/>
+                        <!-- プログレスバー & 進捗テキスト -->
+                        <Grid Grid.Row="0" Margin="0,0,0,6">
+                            <ProgressBar x:Name="CompareProgressBar" Height="18" Visibility="Collapsed"/>
+                            <TextBlock x:Name="TxtCompareProgress" Text="" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="11" FontWeight="SemiBold" Foreground="#333333" Visibility="Collapsed"/>
+                        </Grid>
 
                         <Grid Grid.Row="1">
                             <Grid.ColumnDefinitions>
@@ -484,6 +508,9 @@
                                                             </Trigger>
                                                             <Trigger Property="Text" Value="FAIL">
                                                                 <Setter Property="Foreground" Value="#D83B01"/>
+                                                            </Trigger>
+                                                            <Trigger Property="Text" Value="未実行">
+                                                                <Setter Property="Foreground" Value="#888888"/>
                                                             </Trigger>
                                                         </Style.Triggers>
                                                     </Style>

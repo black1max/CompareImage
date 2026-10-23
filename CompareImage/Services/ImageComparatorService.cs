@@ -45,14 +45,85 @@ public class ImageComparatorService
         return result;
     }
 
+    /// <summary>
+    /// 数値比較用: 全角を半角化し、0～9、小数点、プラス符号、マイナス符号のみを抽出する
+    /// </summary>
+    public static string NormalizeNumberText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+
+        var sb = new System.Text.StringBuilder();
+        foreach (char c in text)
+        {
+            if (c >= '０' && c <= '９') sb.Append((char)(c - '０' + '0'));
+            else if (c == '＋') sb.Append('+');
+            else if (c == 'ー' || c == '−' || c == '―' || c == '‐') sb.Append('-');
+            else if (c == '．') sb.Append('.');
+            else if (c == '，' || c == ',') continue; // 桁区切りカンマは除外
+            else sb.Append(c);
+        }
+
+        string converted = sb.ToString();
+        var filtered = new System.Text.StringBuilder();
+        foreach (char c in converted)
+        {
+            if ((c >= '0' && c <= '9') || c == '.' || c == '+' || c == '-')
+            {
+                filtered.Append(c);
+            }
+        }
+
+        string result = filtered.ToString();
+
+        // ピリオドが複数存在する場合 (OCR が桁区切りカンマ ',' を '.' と誤認した場合の補正)
+        // 最後のピリオドを小数点とし、それより前にあるピリオドは桁区切りとして除去
+        int lastDotIndex = result.LastIndexOf('.');
+        if (lastDotIndex >= 0 && result.IndexOf('.') != lastDotIndex)
+        {
+            var clean = new System.Text.StringBuilder();
+            for (int i = 0; i < result.Length; i++)
+            {
+                if (result[i] == '.' && i != lastDotIndex)
+                {
+                    continue; // 最後のピリオド以外は除去
+                }
+                clean.Append(result[i]);
+            }
+            result = clean.ToString();
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 数値文字列同士の一致判定 (文字列一致または浮動小数点数値としての一致)
+    /// </summary>
+    public static bool CompareNumberValues(string numA, string numB)
+    {
+        // どちらか一方でも空文字の場合は未認識として不一致
+        if (string.IsNullOrWhiteSpace(numA) || string.IsNullOrWhiteSpace(numB)) return false;
+        if (string.Equals(numA, numB, StringComparison.Ordinal)) return true;
+
+        if (double.TryParse(numA, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double valA) &&
+            double.TryParse(numB, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double valB))
+        {
+            return Math.Abs(valA - valB) < 1e-9;
+        }
+
+        return false;
+    }
+
     public async Task<PairCompareResult> CompareSinglePairAsync(
         ImagePair pair,
         RoiConfig roiConfig,
         bool ignoreWhitespace = true,
         bool caseSensitive = false,
         bool numbersOnly = false,
-        PreprocessOptions? preprocessOptions = null)
+        PreprocessOptions? preprocessOptions = null,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         // 画像読み込み
         var baseBmp = LoadBitmapSource(pair.BaseImagePath);
         var targetBmp = LoadBitmapSource(pair.TargetImagePath);
@@ -62,6 +133,8 @@ public class ImageComparatorService
 
         for (int i = 0; i < roiConfig.BaseImageRoi.Count; i++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var bRoi = roiConfig.BaseImageRoi[i];
             var tRoi = roiConfig.TargetImageRoi[i];
 
@@ -105,6 +178,35 @@ public class ImageComparatorService
                     TargetRoi = tRoi
                 });
             }
+            else if (bRoi.CompareType == RoiCompareType.Number)
+            {
+                // 数値比較 (0～9, 小数点, +, -) - isNumberMode: true で専用ホワイトリストを適用
+                string bRaw = await CurrentOcrService.RecognizeCroppedRegionAsync(bCropped, 0, 0, bCropped.PixelWidth, bCropped.PixelHeight, isNumberMode: true);
+                string tRaw = await CurrentOcrService.RecognizeCroppedRegionAsync(tCropped, 0, 0, tCropped.PixelWidth, tCropped.PixelHeight, isNumberMode: true);
+
+                string bNorm = NormalizeNumberText(bRaw);
+                string tNorm = NormalizeNumberText(tRaw);
+
+                bool isMatch = CompareNumberValues(bNorm, tNorm);
+                if (!isMatch)
+                {
+                    allMatched = false;
+                }
+
+                regionResults.Add(new RegionCompareResult
+                {
+                    RegionId = bRoi.Id,
+                    RegionName = bRoi.Name,
+                    CompareType = RoiCompareType.Number,
+                    BaseTextRaw = bRaw.Trim(),
+                    TargetTextRaw = tRaw.Trim(),
+                    BaseTextNormalized = bNorm,
+                    TargetTextNormalized = tNorm,
+                    IsMatch = isMatch,
+                    BaseRoi = bRoi,
+                    TargetRoi = tRoi
+                });
+            }
             else
             {
                 // 文字列（OCR）比較 (前処理済みクロップ領域からテキスト認識)
@@ -114,7 +216,8 @@ public class ImageComparatorService
                 string bNorm = NormalizeText(bRaw, ignoreWhitespace, caseSensitive, numbersOnly);
                 string tNorm = NormalizeText(tRaw, ignoreWhitespace, caseSensitive, numbersOnly);
 
-                bool isMatch = string.Equals(bNorm, tNorm, StringComparison.Ordinal);
+                // どちらか一方でも空文字の場合は未認識として不一致
+                bool isMatch = !string.IsNullOrEmpty(bNorm) && !string.IsNullOrEmpty(tNorm) && string.Equals(bNorm, tNorm, StringComparison.Ordinal);
                 if (!isMatch)
                 {
                     allMatched = false;
@@ -225,7 +328,9 @@ public class ImageComparatorService
         int safeWidth = Math.Clamp(width, 1, Math.Max(1, srcWidth - safeX));
         int safeHeight = Math.Clamp(height, 1, Math.Max(1, srcHeight - safeY));
 
-        return new CroppedBitmap(source, new System.Windows.Int32Rect(safeX, safeY, safeWidth, safeHeight));
+        var cropped = new CroppedBitmap(source, new System.Windows.Int32Rect(safeX, safeY, safeWidth, safeHeight));
+        cropped.Freeze();
+        return cropped;
     }
 
     public static BitmapSource LoadBitmapSource(string path)

@@ -6,7 +6,8 @@ namespace CompareImage.Models;
 public enum RoiCompareType
 {
     Text = 0,   // 文字列 (OCR)
-    Image = 1   // 画像 (ピクセル一致)
+    Image = 1,  // 画像 (ピクセル一致)
+    Number = 2  // 数値 (0～9, 小数点, +, -)
 }
 
 public class RoiItem
@@ -27,6 +28,7 @@ public class RoiItem
     public string CompareTypeDisplayName => CompareType switch
     {
         RoiCompareType.Text => "🔤 文字列",
+        RoiCompareType.Number => "🔢 数値",
         RoiCompareType.Image => "🖼 画像",
         _ => "🔤 文字列"
     };

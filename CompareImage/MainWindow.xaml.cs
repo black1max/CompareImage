@@ -39,9 +39,31 @@ public partial class MainWindow : Window
     private string? _targetImagePath;
     private BitmapImage? _currentBitmap;
 
-    // マウスドラッグ描画用
+    // マウスドラッグ・対話操作用
+    private enum CanvasInteractionMode
+    {
+        None,
+        Create,
+        Move,
+        ResizeTopLeft,
+        ResizeTopRight,
+        ResizeBottomLeft,
+        ResizeBottomRight,
+        ResizeTop,
+        ResizeBottom,
+        ResizeLeft,
+        ResizeRight
+    }
+
+    private CanvasInteractionMode _interactionMode = CanvasInteractionMode.None;
     private Point? _dragStartPoint;
+    private Rect _initialRoiRect;
+    private RoiItem? _activeRoiItem;
     private System.Windows.Shapes.Rectangle? _dragRect;
+    private bool _isUpdatingCoordUi = false;
+
+    // 比較処理キャンセルトークン
+    private System.Threading.CancellationTokenSource? _compareCts;
 
     public MainWindow()
     {
@@ -336,13 +358,55 @@ public partial class MainWindow : Window
         }
     }
 
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        // テキストボックス等の入力中はキー操作を邪魔しない
+        if (e.OriginalSource is TextBox || e.OriginalSource is ComboBox)
+        {
+            return;
+        }
+
+        if (DgRoiList.SelectedItem is RoiItem selected)
+        {
+            if (e.Key == Key.Delete)
+            {
+                BtnDeleteSelectedRoi_Click(sender, e);
+                e.Handled = true;
+                return;
+            }
+
+            int step = (Keyboard.Modifiers & ModifierKeys.Shift) != 0 ? 10 : 1;
+            bool isCtrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
+
+            if (isCtrl)
+            {
+                // Ctrl + 矢印キー: サイズ伸縮 (Shiftで10px)
+                if (e.Key == Key.Left) { selected.Width = Math.Max(5, selected.Width - step); e.Handled = true; }
+                else if (e.Key == Key.Right) { selected.Width = Math.Max(5, selected.Width + step); e.Handled = true; }
+                else if (e.Key == Key.Up) { selected.Height = Math.Max(5, selected.Height - step); e.Handled = true; }
+                else if (e.Key == Key.Down) { selected.Height = Math.Max(5, selected.Height + step); e.Handled = true; }
+            }
+            else
+            {
+                // 矢印キー: 位置移動 (Shiftで10px)
+                if (e.Key == Key.Left) { selected.X = Math.Max(0, selected.X - step); e.Handled = true; }
+                else if (e.Key == Key.Right) { selected.X = Math.Max(0, selected.X + step); e.Handled = true; }
+                else if (e.Key == Key.Up) { selected.Y = Math.Max(0, selected.Y - step); e.Handled = true; }
+                else if (e.Key == Key.Down) { selected.Y = Math.Max(0, selected.Y + step); e.Handled = true; }
+            }
+
+            if (e.Handled)
+            {
+                UpdateCoordUiFromSelected(selected);
+                DgRoiList.Items.Refresh();
+                RedrawCanvasRois();
+            }
+        }
+    }
+
     private void DgRoiList_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Delete)
-        {
-            BtnDeleteSelectedRoi_Click(sender, e);
-            e.Handled = true;
-        }
+        // Window_PreviewKeyDown で一括処理するためフォールスルー
     }
 
     private void BtnDeleteSelectedRoi_Click(object sender, RoutedEventArgs e)
@@ -478,6 +542,15 @@ public partial class MainWindow : Window
         }
     }
 
+    private void BtnSetSelectedNumber_Click(object sender, RoutedEventArgs e)
+    {
+        if (DgRoiList.SelectedItem is RoiItem selected)
+        {
+            selected.CompareType = RoiCompareType.Number;
+            UpdateRoiDataGridSource();
+        }
+    }
+
     private void BtnSetSelectedImage_Click(object sender, RoutedEventArgs e)
     {
         if (DgRoiList.SelectedItem is RoiItem selected)
@@ -493,6 +566,16 @@ public partial class MainWindow : Window
         foreach (var r in CurrentRois)
         {
             r.CompareType = RoiCompareType.Text;
+        }
+        UpdateRoiDataGridSource();
+    }
+
+    private void MenuSetAllNumberMode_Click(object sender, RoutedEventArgs e)
+    {
+        if (CurrentRois.Count == 0) return;
+        foreach (var r in CurrentRois)
+        {
+            r.CompareType = RoiCompareType.Number;
         }
         UpdateRoiDataGridSource();
     }
@@ -524,6 +607,23 @@ public partial class MainWindow : Window
     {
         if (DgRoiList.SelectedItem is RoiItem selected)
         {
+            // 位置・サイズ微調整UIの更新
+            _isUpdatingCoordUi = true;
+            try
+            {
+                PanelRoiAdjust.IsEnabled = true;
+                TxtRoiAdjustTitle.Text = $"【微調整】ID {selected.Id}: {selected.Name}";
+                TxtRoiX.Text = selected.X.ToString();
+                TxtRoiY.Text = selected.Y.ToString();
+                TxtRoiW.Text = selected.Width.ToString();
+                TxtRoiH.Text = selected.Height.ToString();
+            }
+            finally
+            {
+                _isUpdatingCoordUi = false;
+            }
+
+            // 前処理UIの更新
             _isUpdatingPreprocessUi = true;
             try
             {
@@ -543,7 +643,87 @@ public partial class MainWindow : Window
         }
         else
         {
+            PanelRoiAdjust.IsEnabled = false;
+            TxtRoiAdjustTitle.Text = "【選択領域の位置・サイズ微調整】領域を選択してください";
+            _isUpdatingCoordUi = true;
+            try
+            {
+                TxtRoiX.Text = "";
+                TxtRoiY.Text = "";
+                TxtRoiW.Text = "";
+                TxtRoiH.Text = "";
+            }
+            finally
+            {
+                _isUpdatingCoordUi = false;
+            }
+
             TxtSelectedRoiPreprocessTitle.Text = "【領域ごとの前処理設定】領域を選択してください";
+        }
+
+        RedrawCanvasRois();
+    }
+
+    private void BtnNudge_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button btn || btn.Tag is not string tag) return;
+        if (DgRoiList.SelectedItem is not RoiItem selected) return;
+
+        var parts = tag.Split(',');
+        if (parts.Length != 2 || !int.TryParse(parts[1], out int delta)) return;
+
+        switch (parts[0])
+        {
+            case "X":
+                selected.X = Math.Max(0, selected.X + delta);
+                break;
+            case "Y":
+                selected.Y = Math.Max(0, selected.Y + delta);
+                break;
+            case "W":
+                selected.Width = Math.Max(5, selected.Width + delta);
+                break;
+            case "H":
+                selected.Height = Math.Max(5, selected.Height + delta);
+                break;
+        }
+
+        UpdateCoordUiFromSelected(selected);
+        DgRoiList.Items.Refresh();
+        RedrawCanvasRois();
+    }
+
+    private void TxtRoiCoord_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        if (_isUpdatingCoordUi) return;
+        if (DgRoiList.SelectedItem is not RoiItem selected) return;
+
+        bool changed = false;
+        if (int.TryParse(TxtRoiX.Text, out int x) && x >= 0 && x != selected.X) { selected.X = x; changed = true; }
+        if (int.TryParse(TxtRoiY.Text, out int y) && y >= 0 && y != selected.Y) { selected.Y = y; changed = true; }
+        if (int.TryParse(TxtRoiW.Text, out int w) && w >= 5 && w != selected.Width) { selected.Width = w; changed = true; }
+        if (int.TryParse(TxtRoiH.Text, out int h) && h >= 5 && h != selected.Height) { selected.Height = h; changed = true; }
+
+        if (changed)
+        {
+            DgRoiList.Items.Refresh();
+            RedrawCanvasRois();
+        }
+    }
+
+    private void UpdateCoordUiFromSelected(RoiItem selected)
+    {
+        _isUpdatingCoordUi = true;
+        try
+        {
+            TxtRoiX.Text = selected.X.ToString();
+            TxtRoiY.Text = selected.Y.ToString();
+            TxtRoiW.Text = selected.Width.ToString();
+            TxtRoiH.Text = selected.Height.ToString();
+        }
+        finally
+        {
+            _isUpdatingCoordUi = false;
         }
     }
 
@@ -607,85 +787,238 @@ public partial class MainWindow : Window
     }
 
     // -----------------------------------------------------------------
-    // キャンバスマウスドラッグ描画
+    // キャンバスマウス操作 (選択・移動・リサイズ・新規描画)
     // -----------------------------------------------------------------
+    private const double HandleSize = 8.0;
+    private const double HandleHitRadius = 7.0;
+
+    private (CanvasInteractionMode mode, RoiItem? roi) HitTestCanvas(Point pt)
+    {
+        var selected = DgRoiList.SelectedItem as RoiItem;
+        if (selected != null)
+        {
+            // 選択中ROIのハンドル判定 (四隅と四辺)
+            double x = selected.X;
+            double y = selected.Y;
+            double w = selected.Width;
+            double h = selected.Height;
+
+            if (IsNearPoint(pt, new Point(x, y))) return (CanvasInteractionMode.ResizeTopLeft, selected);
+            if (IsNearPoint(pt, new Point(x + w, y))) return (CanvasInteractionMode.ResizeTopRight, selected);
+            if (IsNearPoint(pt, new Point(x, y + h))) return (CanvasInteractionMode.ResizeBottomLeft, selected);
+            if (IsNearPoint(pt, new Point(x + w, y + h))) return (CanvasInteractionMode.ResizeBottomRight, selected);
+            if (IsNearPoint(pt, new Point(x + w / 2, y))) return (CanvasInteractionMode.ResizeTop, selected);
+            if (IsNearPoint(pt, new Point(x + w / 2, y + h))) return (CanvasInteractionMode.ResizeBottom, selected);
+            if (IsNearPoint(pt, new Point(x, y + h / 2))) return (CanvasInteractionMode.ResizeLeft, selected);
+            if (IsNearPoint(pt, new Point(x + w, y + h / 2))) return (CanvasInteractionMode.ResizeRight, selected);
+        }
+
+        // 内部判定 (逆順: 上に描画されているものを優先)
+        var rois = CurrentRois;
+        for (int i = rois.Count - 1; i >= 0; i--)
+        {
+            var r = rois[i];
+            if (pt.X >= r.X && pt.X <= r.X + r.Width && pt.Y >= r.Y && pt.Y <= r.Y + r.Height)
+            {
+                return (CanvasInteractionMode.Move, r);
+            }
+        }
+
+        return (CanvasInteractionMode.Create, null);
+    }
+
+    private static bool IsNearPoint(Point p1, Point p2)
+    {
+        return Math.Abs(p1.X - p2.X) <= HandleHitRadius && Math.Abs(p1.Y - p2.Y) <= HandleHitRadius;
+    }
+
     private void RoiCanvas_MouseDown(object sender, MouseButtonEventArgs e)
     {
         if (_currentBitmap == null || e.LeftButton != MouseButtonState.Pressed) return;
 
         var pos = e.GetPosition(RoiCanvas);
         _dragStartPoint = pos;
+        RoiCanvas.Focus();
 
-        _dragRect = new System.Windows.Shapes.Rectangle
+        var (mode, hitRoi) = HitTestCanvas(pos);
+        _interactionMode = mode;
+        _activeRoiItem = hitRoi;
+
+        if (mode == CanvasInteractionMode.Create)
         {
-            Stroke = Brushes.Yellow,
-            StrokeThickness = 2,
-            StrokeDashArray = new DoubleCollection { 4, 2 },
-            Fill = new SolidColorBrush(Color.FromArgb(40, 255, 255, 0))
-        };
-        Canvas.SetLeft(_dragRect, pos.X);
-        Canvas.SetTop(_dragRect, pos.Y);
-        OverlayCanvas.Children.Add(_dragRect);
+            _dragRect = new System.Windows.Shapes.Rectangle
+            {
+                Stroke = Brushes.Yellow,
+                StrokeThickness = 2,
+                StrokeDashArray = new DoubleCollection { 4, 2 },
+                Fill = new SolidColorBrush(Color.FromArgb(40, 255, 255, 0))
+            };
+            Canvas.SetLeft(_dragRect, pos.X);
+            Canvas.SetTop(_dragRect, pos.Y);
+            OverlayCanvas.Children.Add(_dragRect);
+        }
+        else if (hitRoi != null)
+        {
+            if (DgRoiList.SelectedItem != hitRoi)
+            {
+                DgRoiList.SelectedItem = hitRoi;
+            }
+            _initialRoiRect = new Rect(hitRoi.X, hitRoi.Y, hitRoi.Width, hitRoi.Height);
+        }
 
         RoiCanvas.CaptureMouse();
     }
 
     private void RoiCanvas_MouseMove(object sender, MouseEventArgs e)
     {
-        if (_dragStartPoint == null || _dragRect == null) return;
-
         var current = e.GetPosition(RoiCanvas);
-        double x = Math.Min(_dragStartPoint.Value.X, current.X);
-        double y = Math.Min(_dragStartPoint.Value.Y, current.Y);
-        double w = Math.Abs(_dragStartPoint.Value.X - current.X);
-        double h = Math.Abs(_dragStartPoint.Value.Y - current.Y);
 
-        Canvas.SetLeft(_dragRect, x);
-        Canvas.SetTop(_dragRect, y);
-        _dragRect.Width = w;
-        _dragRect.Height = h;
+        if (_interactionMode == CanvasInteractionMode.None || _dragStartPoint == null)
+        {
+            // ホバー時のカーソル変更
+            var (hoverMode, _) = HitTestCanvas(current);
+            RoiCanvas.Cursor = hoverMode switch
+            {
+                CanvasInteractionMode.ResizeTopLeft or CanvasInteractionMode.ResizeBottomRight => Cursors.SizeNWSE,
+                CanvasInteractionMode.ResizeTopRight or CanvasInteractionMode.ResizeBottomLeft => Cursors.SizeNESW,
+                CanvasInteractionMode.ResizeTop or CanvasInteractionMode.ResizeBottom => Cursors.SizeNS,
+                CanvasInteractionMode.ResizeLeft or CanvasInteractionMode.ResizeRight => Cursors.SizeWE,
+                CanvasInteractionMode.Move => Cursors.SizeAll,
+                _ => Cursors.Cross
+            };
+            return;
+        }
+
+        double dx = current.X - _dragStartPoint.Value.X;
+        double dy = current.Y - _dragStartPoint.Value.Y;
+
+        if (_interactionMode == CanvasInteractionMode.Create)
+        {
+            if (_dragRect == null) return;
+            double x = Math.Min(_dragStartPoint.Value.X, current.X);
+            double y = Math.Min(_dragStartPoint.Value.Y, current.Y);
+            double w = Math.Abs(_dragStartPoint.Value.X - current.X);
+            double h = Math.Abs(_dragStartPoint.Value.Y - current.Y);
+
+            Canvas.SetLeft(_dragRect, x);
+            Canvas.SetTop(_dragRect, y);
+            _dragRect.Width = w;
+            _dragRect.Height = h;
+        }
+        else if (_activeRoiItem != null)
+        {
+            var roi = _activeRoiItem;
+            switch (_interactionMode)
+            {
+                case CanvasInteractionMode.Move:
+                    roi.X = Math.Max(0, (int)Math.Round(_initialRoiRect.X + dx));
+                    roi.Y = Math.Max(0, (int)Math.Round(_initialRoiRect.Y + dy));
+                    break;
+                case CanvasInteractionMode.ResizeTopLeft:
+                    int newX = Math.Max(0, (int)Math.Round(_initialRoiRect.X + dx));
+                    int newY = Math.Max(0, (int)Math.Round(_initialRoiRect.Y + dy));
+                    roi.Width = Math.Max(5, (int)Math.Round(_initialRoiRect.Right - newX));
+                    roi.Height = Math.Max(5, (int)Math.Round(_initialRoiRect.Bottom - newY));
+                    roi.X = (int)Math.Round(_initialRoiRect.Right - roi.Width);
+                    roi.Y = (int)Math.Round(_initialRoiRect.Bottom - roi.Height);
+                    break;
+                case CanvasInteractionMode.ResizeTopRight:
+                    roi.Width = Math.Max(5, (int)Math.Round(_initialRoiRect.Width + dx));
+                    newY = Math.Max(0, (int)Math.Round(_initialRoiRect.Y + dy));
+                    roi.Height = Math.Max(5, (int)Math.Round(_initialRoiRect.Bottom - newY));
+                    roi.Y = (int)Math.Round(_initialRoiRect.Bottom - roi.Height);
+                    break;
+                case CanvasInteractionMode.ResizeBottomLeft:
+                    newX = Math.Max(0, (int)Math.Round(_initialRoiRect.X + dx));
+                    roi.Width = Math.Max(5, (int)Math.Round(_initialRoiRect.Right - newX));
+                    roi.X = (int)Math.Round(_initialRoiRect.Right - roi.Width);
+                    roi.Height = Math.Max(5, (int)Math.Round(_initialRoiRect.Height + dy));
+                    break;
+                case CanvasInteractionMode.ResizeBottomRight:
+                    roi.Width = Math.Max(5, (int)Math.Round(_initialRoiRect.Width + dx));
+                    roi.Height = Math.Max(5, (int)Math.Round(_initialRoiRect.Height + dy));
+                    break;
+                case CanvasInteractionMode.ResizeTop:
+                    newY = Math.Max(0, (int)Math.Round(_initialRoiRect.Y + dy));
+                    roi.Height = Math.Max(5, (int)Math.Round(_initialRoiRect.Bottom - newY));
+                    roi.Y = (int)Math.Round(_initialRoiRect.Bottom - roi.Height);
+                    break;
+                case CanvasInteractionMode.ResizeBottom:
+                    roi.Height = Math.Max(5, (int)Math.Round(_initialRoiRect.Height + dy));
+                    break;
+                case CanvasInteractionMode.ResizeLeft:
+                    newX = Math.Max(0, (int)Math.Round(_initialRoiRect.X + dx));
+                    roi.Width = Math.Max(5, (int)Math.Round(_initialRoiRect.Right - newX));
+                    roi.X = (int)Math.Round(_initialRoiRect.Right - roi.Width);
+                    break;
+                case CanvasInteractionMode.ResizeRight:
+                    roi.Width = Math.Max(5, (int)Math.Round(_initialRoiRect.Width + dx));
+                    break;
+            }
+
+            UpdateCoordUiFromSelected(roi);
+            RedrawCanvasRois();
+        }
     }
 
     private void RoiCanvas_MouseUp(object sender, MouseButtonEventArgs e)
     {
-        if (_dragStartPoint == null || _dragRect == null) return;
+        if (_dragStartPoint == null) return;
 
         var current = e.GetPosition(RoiCanvas);
         RoiCanvas.ReleaseMouseCapture();
 
-        double x = Math.Max(0, Math.Min(_dragStartPoint.Value.X, current.X));
-        double y = Math.Max(0, Math.Min(_dragStartPoint.Value.Y, current.Y));
-        double w = Math.Abs(_dragStartPoint.Value.X - current.X);
-        double h = Math.Abs(_dragStartPoint.Value.Y - current.Y);
-
-        OverlayCanvas.Children.Remove(_dragRect);
-        _dragStartPoint = null;
-        _dragRect = null;
-
-        if (w >= 5 && h >= 5)
+        if (_interactionMode == CanvasInteractionMode.Create)
         {
-            var rois = CurrentRois;
-            int newId = rois.Count + 1;
-            rois.Add(new RoiItem
+            if (_dragRect != null)
             {
-                Id = newId,
-                Name = $"領域_{newId}",
-                CompareType = RoiCompareType.Text, // 初期値は文字列比較
-                X = (int)Math.Round(x),
-                Y = (int)Math.Round(y),
-                Width = (int)Math.Round(w),
-                Height = (int)Math.Round(h)
-            });
-            UpdateRoiDataGridSource();
+                OverlayCanvas.Children.Remove(_dragRect);
+                _dragRect = null;
+            }
+
+            double x = Math.Max(0, Math.Min(_dragStartPoint.Value.X, current.X));
+            double y = Math.Max(0, Math.Min(_dragStartPoint.Value.Y, current.Y));
+            double w = Math.Abs(_dragStartPoint.Value.X - current.X);
+            double h = Math.Abs(_dragStartPoint.Value.Y - current.Y);
+
+            if (w >= 5 && h >= 5)
+            {
+                var rois = CurrentRois;
+                int newId = rois.Count + 1;
+                var newRoi = new RoiItem
+                {
+                    Id = newId,
+                    Name = $"領域_{newId}",
+                    CompareType = RoiCompareType.Text, // 初期値は文字列比較
+                    X = (int)Math.Round(x),
+                    Y = (int)Math.Round(y),
+                    Width = (int)Math.Round(w),
+                    Height = (int)Math.Round(h)
+                };
+                rois.Add(newRoi);
+                UpdateRoiDataGridSource();
+                DgRoiList.SelectedItem = newRoi;
+            }
         }
+        else if (_activeRoiItem != null)
+        {
+            DgRoiList.Items.Refresh();
+            RedrawCanvasRois();
+        }
+
+        _interactionMode = CanvasInteractionMode.None;
+        _dragStartPoint = null;
+        _activeRoiItem = null;
     }
 
     private void RedrawCanvasRois()
     {
         OverlayCanvas.Children.Clear();
+        var selectedItem = DgRoiList.SelectedItem as RoiItem;
 
         foreach (var r in CurrentRois)
         {
+            bool isSelected = (r == selectedItem);
             Color strokeColor;
             Color fillColor;
 
@@ -696,11 +1029,17 @@ public partial class MainWindow : Window
                 strokeColor = IsBaseMode ? Color.FromRgb(255, 145, 0) : Color.FromRgb(224, 64, 251);
                 fillColor = IsBaseMode ? Color.FromArgb(40, 255, 145, 0) : Color.FromArgb(40, 224, 64, 251);
             }
+            else if (r.CompareType == RoiCompareType.Number)
+            {
+                // 数値比較: 鮮やかなブルー / シアン
+                strokeColor = IsBaseMode ? Color.FromRgb(0, 120, 215) : Color.FromRgb(0, 176, 255);
+                fillColor = IsBaseMode ? Color.FromArgb(40, 0, 120, 215) : Color.FromArgb(40, 0, 176, 255);
+            }
             else
             {
-                // 文字列比較: 明るい緑 / 明るいシアン
-                strokeColor = IsBaseMode ? Color.FromRgb(0, 230, 118) : Color.FromRgb(0, 191, 255);
-                fillColor = IsBaseMode ? Color.FromArgb(40, 0, 230, 118) : Color.FromArgb(40, 0, 191, 255);
+                // 文字列比較: 明るい緑 / エメラルド
+                strokeColor = IsBaseMode ? Color.FromRgb(0, 200, 83) : Color.FromRgb(0, 191, 255);
+                fillColor = IsBaseMode ? Color.FromArgb(40, 0, 200, 83) : Color.FromArgb(40, 0, 191, 255);
             }
 
             var rect = new System.Windows.Shapes.Rectangle
@@ -708,14 +1047,25 @@ public partial class MainWindow : Window
                 Width = r.Width,
                 Height = r.Height,
                 Stroke = new SolidColorBrush(strokeColor),
-                StrokeThickness = 2,
+                StrokeThickness = isSelected ? 3.0 : 1.5,
                 Fill = new SolidColorBrush(fillColor)
             };
+            if (isSelected)
+            {
+                rect.StrokeDashArray = new DoubleCollection { 3, 2 };
+            }
+
             Canvas.SetLeft(rect, r.X);
             Canvas.SetTop(rect, r.Y);
             OverlayCanvas.Children.Add(rect);
 
-            string typeTag = r.CompareType == RoiCompareType.Image ? "[画像]" : "[文字]";
+            string typeTag = r.CompareType switch
+            {
+                RoiCompareType.Image => "[画像]",
+                RoiCompareType.Number => "[数値]",
+                _ => "[文字]"
+            };
+
             var label = new Border
             {
                 Background = new SolidColorBrush(strokeColor),
@@ -724,7 +1074,7 @@ public partial class MainWindow : Window
                 Child = new TextBlock
                 {
                     Text = $"#{r.Id} {r.Name} {typeTag}",
-                    Foreground = Brushes.Black,
+                    Foreground = Brushes.White,
                     FontWeight = FontWeights.Bold,
                     FontSize = 11
                 }
@@ -732,7 +1082,35 @@ public partial class MainWindow : Window
             Canvas.SetLeft(label, r.X);
             Canvas.SetTop(label, Math.Max(0, r.Y - 18));
             OverlayCanvas.Children.Add(label);
+
+            // 選択中の領域には四隅・四辺にリサイズハンドルを描画
+            if (isSelected)
+            {
+                AddHandle(r.X, r.Y);
+                AddHandle(r.X + r.Width, r.Y);
+                AddHandle(r.X, r.Y + r.Height);
+                AddHandle(r.X + r.Width, r.Y + r.Height);
+                AddHandle(r.X + r.Width / 2, r.Y);
+                AddHandle(r.X + r.Width / 2, r.Y + r.Height);
+                AddHandle(r.X, r.Y + r.Height / 2);
+                AddHandle(r.X + r.Width, r.Y + r.Height / 2);
+            }
         }
+    }
+
+    private void AddHandle(double cx, double cy)
+    {
+        var h = new System.Windows.Shapes.Rectangle
+        {
+            Width = HandleSize,
+            Height = HandleSize,
+            Fill = Brushes.White,
+            Stroke = new SolidColorBrush(Color.FromRgb(0, 120, 215)),
+            StrokeThickness = 1.5
+        };
+        Canvas.SetLeft(h, cx - HandleSize / 2);
+        Canvas.SetTop(h, cy - HandleSize / 2);
+        OverlayCanvas.Children.Add(h);
     }
 
     // -----------------------------------------------------------------
@@ -848,6 +1226,17 @@ public partial class MainWindow : Window
         }
     }
 
+    private void BtnCancelCompare_Click(object sender, RoutedEventArgs e)
+    {
+        if (_compareCts != null && !_compareCts.IsCancellationRequested)
+        {
+            _compareCts.Cancel();
+            BtnCancelCompare.IsEnabled = false;
+            MenuCancelCompare.IsEnabled = false;
+            TxtCompareProgress.Text = "中断処理中 (現在のペア完了後に停止します)...";
+        }
+    }
+
     private async void BtnRunCompare_Click(object sender, RoutedEventArgs e)
     {
         if (_baseRois.Count == 0)
@@ -885,50 +1274,125 @@ public partial class MainWindow : Window
             Sharpen = ChkPreprocessSharpen.IsChecked == true
         };
 
+        // 以前の比較結果をクリアして未実行状態にリセット
+        foreach (var item in _compareResults)
+        {
+            item.RegionResults.Clear();
+            item.AllMatched = false;
+        }
+        DgPairs.Items.Refresh();
+        DgRegionDetails.ItemsSource = null;
+
+        _compareCts?.Dispose();
+        _compareCts = new System.Threading.CancellationTokenSource();
+
         BtnRunCompare.IsEnabled = false;
+        MenuRunCompare.IsEnabled = false;
+        BtnCancelCompare.IsEnabled = true;
+        MenuCancelCompare.IsEnabled = true;
+
         CompareProgressBar.Visibility = Visibility.Visible;
+        TxtCompareProgress.Visibility = Visibility.Visible;
         CompareProgressBar.Value = 0;
         CompareProgressBar.Maximum = _compareResults.Count;
 
         int total = _compareResults.Count;
+        int processedCount = 0;
         int passCount = 0;
+        int failCount = 0;
         string? firstError = null;
+        bool isCancelled = false;
 
-        for (int i = 0; i < total; i++)
+        try
         {
-            var item = _compareResults[i];
-            var pair = new ImagePair
+            for (int i = 0; i < total; i++)
             {
-                PairName = item.PairName,
-                BaseImagePath = item.BaseImagePath,
-                TargetImagePath = item.TargetImagePath
-            };
+                if (_compareCts.Token.IsCancellationRequested)
+                {
+                    isCancelled = true;
+                    break;
+                }
 
-            try
-            {
-                var res = await _comparatorService.CompareSinglePairAsync(pair, roiConfig, ignoreWs, caseSens, numOnly, preprocessOptions);
-                item.AllMatched = res.AllMatched;
-                item.RegionResults = res.RegionResults;
-                if (res.AllMatched) passCount++;
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine($"比較エラー ({item.PairName}): {ex.Message}");
-                if (firstError == null) firstError = ex.Message;
-            }
+                var item = _compareResults[i];
+                TxtCompareProgress.Text = $"{i + 1} / {total} 件を比較中... ({item.PairName})";
 
-            CompareProgressBar.Value = i + 1;
+                var pair = new ImagePair
+                {
+                    PairName = item.PairName,
+                    BaseImagePath = item.BaseImagePath,
+                    TargetImagePath = item.TargetImagePath
+                };
+
+                try
+                {
+                    var res = await _comparatorService.CompareSinglePairAsync(
+                        pair, roiConfig, ignoreWs, caseSens, numOnly, preprocessOptions, _compareCts.Token);
+                    item.AllMatched = res.AllMatched;
+                    item.RegionResults = res.RegionResults;
+                    processedCount++;
+                    if (res.AllMatched) passCount++;
+                    else failCount++;
+                }
+                catch (OperationCanceledException)
+                {
+                    isCancelled = true;
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"比較エラー ({item.PairName}): {ex.Message}");
+                    if (firstError == null) firstError = ex.Message;
+                    processedCount++;
+                    failCount++;
+                }
+
+                CompareProgressBar.Value = i + 1;
+                // 完了したペアの結果をリアルタイムで一覧に反映
+                DgPairs.Items.Refresh();
+
+                if (_compareCts.Token.IsCancellationRequested)
+                {
+                    isCancelled = true;
+                    break;
+                }
+            }
+        }
+        finally
+        {
+            DgPairs.Items.Refresh();
+            CompareProgressBar.Visibility = Visibility.Collapsed;
+            TxtCompareProgress.Visibility = Visibility.Collapsed;
+
+            BtnRunCompare.IsEnabled = true;
+            MenuRunCompare.IsEnabled = true;
+            BtnCancelCompare.IsEnabled = false;
+            MenuCancelCompare.IsEnabled = false;
+
+            _compareCts.Dispose();
+            _compareCts = null;
         }
 
-        // 一覧をリフレッシュ
-        DgPairs.Items.Refresh();
-        CompareProgressBar.Visibility = Visibility.Collapsed;
-        BtnRunCompare.IsEnabled = true;
-
-        int failCount = total - passCount;
         string errorNotice = firstError != null ? $"\n\n※一部の比較でエラーが発生しました:\n{firstError}" : "";
-        MessageBox.Show($"全 {total} 件の比較が完了しました。\n\n✔ PASS (完全一致): {passCount} 件\n✘ FAIL (差異あり): {failCount} 件{errorNotice}",
-            "比較完了", MessageBoxButton.OK, firstError != null ? MessageBoxImage.Warning : MessageBoxImage.Information);
+
+        if (isCancelled)
+        {
+            int unexecutedCount = total - processedCount;
+            TxtPairSummary.Text = $"比較を中断しました (完了: {processedCount} 件 [PASS: {passCount} / FAIL: {failCount}] / 未実行: {unexecutedCount} 件)";
+            MessageBox.Show(
+                $"比較処理を途中で中断しました。\n\n" +
+                $"✔ 完了件数: {processedCount} / {total} 件\n" +
+                $"  ・PASS (完全一致): {passCount} 件\n" +
+                $"  ・FAIL (差異あり): {failCount} 件\n" +
+                $"⏳ 未実行: {unexecutedCount} 件\n\n" +
+                $"※比較したところまでの結果を画面に出力・反映しました。\n「CSVエクスポート」や「詳細エクスポート」から結果を出力できます。{errorNotice}",
+                "比較中断", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        else
+        {
+            MessageBox.Show(
+                $"全 {total} 件の比較が完了しました。\n\n✔ PASS (完全一致): {passCount} 件\n✘ FAIL (差異あり): {failCount} 件{errorNotice}",
+                "比較完了", MessageBoxButton.OK, firstError != null ? MessageBoxImage.Warning : MessageBoxImage.Information);
+        }
     }
 
     private void DgPairs_SelectionChanged(object sender, SelectionChangedEventArgs e)

@@ -92,7 +92,7 @@ public class WindowsOcrService : IOcrService
     /// <summary>
     /// BitmapSource の指定範囲(X, Y, Width, Height)をクロップし、OCR認識する
     /// </summary>
-    public async Task<string> RecognizeCroppedRegionAsync(BitmapSource source, int x, int y, int width, int height)
+    public async Task<string> RecognizeCroppedRegionAsync(BitmapSource source, int x, int y, int width, int height, bool isNumberMode = false)
     {
         EnsureEngineAvailable();
 
@@ -108,38 +108,12 @@ public class WindowsOcrService : IOcrService
         var cropRect = new Int32Rect(safeX, safeY, safeWidth, safeHeight);
         var cropped = new CroppedBitmap(source, cropRect);
 
-        // OCR認識精度向上のためのパディングと拡大処理
-        // WinRT OCR は境界ギリギリに文字があると文字セグメンテーションが失敗しやすいため、
-        // 解像度を確保しつつ白背景の余白を必ず設ける
-        int pad = 12;
-        double scale = 1.0;
-        if (safeHeight < 80 || safeWidth < 80)
-        {
-            scale = Math.Max(80.0 / safeHeight, Math.Max(80.0 / safeWidth, 2.0));
-        }
-
-        BitmapSource scaledBitmap = (Math.Abs(scale - 1.0) > 0.01)
-            ? new TransformedBitmap(cropped, new ScaleTransform(scale, scale))
-            : cropped;
-
-        int paddedW = scaledBitmap.PixelWidth + pad * 2;
-        int paddedH = scaledBitmap.PixelHeight + pad * 2;
-
-        var rtb = new RenderTargetBitmap(paddedW, paddedH, 96, 96, PixelFormats.Pbgra32);
-        var dv = new DrawingVisual();
-        using (var dc = dv.RenderOpen())
-        {
-            // 白背景描画
-            dc.DrawRectangle(Brushes.White, null, new Rect(0, 0, paddedW, paddedH));
-            // スケールしたクロップ画像を中央に配置
-            dc.DrawImage(scaledBitmap, new Rect(pad, pad, scaledBitmap.PixelWidth, scaledBitmap.PixelHeight));
-        }
-        rtb.Render(dv);
-        rtb.Freeze();
+        // OCR認識精度向上のための超解像拡大・大津二値化・自動反転・太線化パイプライン
+        var optimized = ImagePreprocessingService.OptimizeForOcr(cropped);
 
         // PNGバイト列に変換
         var encoder = new PngBitmapEncoder();
-        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rtb));
+        encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(optimized));
         using var ms = new MemoryStream();
         encoder.Save(ms);
 

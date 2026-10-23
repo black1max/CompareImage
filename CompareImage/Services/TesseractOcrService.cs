@@ -79,7 +79,7 @@ public class TesseractOcrService : IOcrService
         return null;
     }
 
-    public async Task<string> RecognizeCroppedRegionAsync(BitmapSource source, int x, int y, int width, int height)
+    public async Task<string> RecognizeCroppedRegionAsync(BitmapSource source, int x, int y, int width, int height, bool isNumberMode = false)
     {
         if (!IsAvailable)
         {
@@ -98,64 +98,45 @@ public class TesseractOcrService : IOcrService
         var cropRect = new Int32Rect(safeX, safeY, safeWidth, safeHeight);
         var cropped = new CroppedBitmap(source, cropRect);
 
+        // OCR認識精度向上のための超解像拡大・大津二値化・自動反転・太線化パイプライン
+        var optimized = ImagePreprocessingService.OptimizeForOcr(cropped);
+
         // 一時 PNG ファイルとして保存
         string tempInput = Path.Combine(Path.GetTempPath(), $"tess_in_{Guid.NewGuid():N}.png");
 
         try
         {
             var encoder = new PngBitmapEncoder();
-            encoder.Frames.Add(BitmapFrame.Create(cropped));
+            encoder.Frames.Add(BitmapFrame.Create(optimized));
             using (var fs = new FileStream(tempInput, FileMode.Create, FileAccess.Write, FileShare.None))
             {
                 encoder.Save(fs);
             }
 
-            // tesseract.exe を非同期で起動
+            // tesseract.exe を非同期で起動 (PSM 7: 単一行 / PSM 6: 複数行 の2段階試行)
             return await Task.Run(() =>
             {
-                var psi = new ProcessStartInfo
+                // 1. まず単一行モード (PSM 7) で試行 (画面キャプチャの項目・数値に最も適している)
+                string result = ExecuteTesseract(tempInput, psm: 7, isNumberMode: isNumberMode);
+                if (!string.IsNullOrWhiteSpace(result))
                 {
-                    FileName = ExePath!,
-                    // -l jpn+eng (無ければ eng にフォールバックするパラメータ)
-                    Arguments = $"\"{tempInput}\" stdout -l jpn+eng --psm 6",
-                    UseShellExecute = false,
-                    CreateNoWindow = true,
-                    RedirectStandardOutput = true,
-                    RedirectStandardError = true,
-                    StandardOutputEncoding = Encoding.UTF8
-                };
-
-                ConfigureTessdataPrefix(psi);
-
-                using var process = new Process { StartInfo = psi };
-                var outputBuilder = new StringBuilder();
-
-                process.OutputDataReceived += (_, e) =>
-                {
-                    if (e.Data != null) outputBuilder.AppendLine(e.Data);
-                };
-
-                process.Start();
-                process.BeginOutputReadLine();
-
-                bool finished = process.WaitForExit(5000);
-                if (!finished)
-                {
-                    try { process.Kill(); } catch { }
-                    throw new TimeoutException("Tesseract OCR の認識処理がタイムアウトしました。");
+                    return result;
                 }
 
-                if (process.ExitCode != 0)
+                // 2. 認識できなかった場合は複数行ブロックモード (PSM 6) で再試行
+                result = ExecuteTesseract(tempInput, psm: 6, isNumberMode: isNumberMode);
+                if (!string.IsNullOrWhiteSpace(result))
                 {
-                    // もし日本語言語データが無い等のエラーなら eng 単体で再試行
-                    string err = process.StandardError.ReadToEnd();
-                    if (err.Contains("jpn") || err.Contains("traineddata"))
-                    {
-                        return RunTesseractEngOnly(tempInput);
-                    }
+                    return result;
                 }
 
-                return outputBuilder.ToString();
+                // 3. それでも空で数値モードなら PSM 8 (単一単語) で試行
+                if (isNumberMode)
+                {
+                    result = ExecuteTesseract(tempInput, psm: 8, isNumberMode: true);
+                }
+
+                return result;
             });
         }
         finally
@@ -167,12 +148,62 @@ public class TesseractOcrService : IOcrService
         }
     }
 
-    private string RunTesseractEngOnly(string tempInput)
+    private string ExecuteTesseract(string tempInput, int psm, bool isNumberMode)
     {
+        string whitelistArg = isNumberMode ? " -c tessedit_char_whitelist=0123456789.+-" : "";
+        string lang = "jpn+eng";
+
         var psi = new ProcessStartInfo
         {
             FileName = ExePath!,
-            Arguments = $"\"{tempInput}\" stdout -l eng --psm 6",
+            Arguments = $"\"{tempInput}\" stdout -l {lang} --psm {psm}{whitelistArg}",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            StandardOutputEncoding = Encoding.UTF8
+        };
+
+        ConfigureTessdataPrefix(psi);
+
+        using var process = new Process { StartInfo = psi };
+        var outputBuilder = new StringBuilder();
+
+        process.OutputDataReceived += (_, e) =>
+        {
+            if (e.Data != null) outputBuilder.AppendLine(e.Data);
+        };
+
+        process.Start();
+        process.BeginOutputReadLine();
+
+        bool finished = process.WaitForExit(5000);
+        if (!finished)
+        {
+            try { process.Kill(); } catch { }
+            return string.Empty;
+        }
+
+        if (process.ExitCode != 0)
+        {
+            // 日本語言語データが無い場合は eng 単体で再試行
+            string err = process.StandardError.ReadToEnd();
+            if (err.Contains("jpn") || err.Contains("traineddata"))
+            {
+                return RunTesseractEngOnly(tempInput, psm, isNumberMode);
+            }
+        }
+
+        return outputBuilder.ToString().Trim();
+    }
+
+    private string RunTesseractEngOnly(string tempInput, int psm = 7, bool isNumberMode = false)
+    {
+        string whitelistArg = isNumberMode ? " -c tessedit_char_whitelist=0123456789.+-" : "";
+        var psi = new ProcessStartInfo
+        {
+            FileName = ExePath!,
+            Arguments = $"\"{tempInput}\" stdout -l eng --psm {psm}{whitelistArg}",
             UseShellExecute = false,
             CreateNoWindow = true,
             RedirectStandardOutput = true,
@@ -187,7 +218,7 @@ public class TesseractOcrService : IOcrService
 
         string output = process.StandardOutput.ReadToEnd();
         process.WaitForExit(3000);
-        return output;
+        return output.Trim();
     }
 
     private void ConfigureTessdataPrefix(ProcessStartInfo psi)

@@ -18,6 +18,7 @@ public class RegionCompareResult
     public string CompareTypeDisplayName => CompareType switch
     {
         RoiCompareType.Text => "🔤 文字列",
+        RoiCompareType.Number => "🔢 数値",
         RoiCompareType.Image => "🖼 画像",
         _ => "🔤 文字列"
     };
@@ -25,6 +26,7 @@ public class RegionCompareResult
     public string CompareTypeSimpleName => CompareType switch
     {
         RoiCompareType.Text => "文字列",
+        RoiCompareType.Number => "数値",
         RoiCompareType.Image => "画像",
         _ => "文字列"
     };
@@ -43,5 +45,12 @@ public class PairCompareResult
 
     public string BaseFileName => System.IO.Path.GetFileName(BaseImagePath);
     public string TargetFileName => System.IO.Path.GetFileName(TargetImagePath);
-    public string StatusText => AllMatched ? "PASS" : "FAIL";
+    public string StatusText
+    {
+        get
+        {
+            if (RegionResults.Count == 0) return "未実行";
+            return AllMatched ? "PASS" : "FAIL";
+        }
+    }
 }

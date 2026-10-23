@@ -87,7 +87,7 @@ public class DetailExportService
 
                 // 1行目: 基本情報 & 元画像行
                 int imageRow = currentRow;
-                ws.Row(imageRow).Height = 75;
+                ws.Row(imageRow).Height = 78;
 
                 ws.Cell(imageRow, 1).Value = pair.PairName;
                 ws.Cell(imageRow, 2).Value = pair.StatusText;
@@ -122,7 +122,7 @@ public class DetailExportService
                 if (hasPreprocess)
                 {
                     int prepRow = currentRow;
-                    ws.Row(prepRow).Height = 75;
+                    ws.Row(prepRow).Height = 78;
 
                     ws.Cell(prepRow, 6).Value = "[前処理後]";
                     ws.Cell(prepRow, 6).Style.Font.FontSize = 9;
@@ -150,17 +150,62 @@ public class DetailExportService
                 if (region.CompareType == RoiCompareType.Text)
                 {
                     int textRow = currentRow;
-                    ws.Row(textRow).Height = 35;
+                    ws.Row(textRow).Height = 32;
 
-                    ws.Cell(textRow, 7).Value = region.BaseTextRaw;
-                    ws.Cell(textRow, 8).Value = region.TargetTextRaw;
+                    ws.Cell(textRow, 6).Value = "[文字列]";
+                    ws.Cell(textRow, 6).Style.Font.FontSize = 9;
+                    ws.Cell(textRow, 6).Style.Font.Bold = true;
+                    ws.Cell(textRow, 6).Style.Font.FontColor = XLColor.FromHtml("#0078D7");
+                    ws.Cell(textRow, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                    ws.Cell(textRow, 6).Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+
+                    string bText = !string.IsNullOrWhiteSpace(region.BaseTextRaw) ? region.BaseTextRaw : "(未検出)";
+                    string tText = !string.IsNullOrWhiteSpace(region.TargetTextRaw) ? region.TargetTextRaw : "(未検出)";
+
+                    ws.Cell(textRow, 7).Value = bText;
+                    ws.Cell(textRow, 8).Value = tText;
 
                     ws.Cell(textRow, 7).Style.Alignment.WrapText = true;
                     ws.Cell(textRow, 8).Style.Alignment.WrapText = true;
+                    ws.Cell(textRow, 7).Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+                    ws.Cell(textRow, 8).Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
                     ws.Cell(textRow, 7).Style.Font.FontSize = 10;
                     ws.Cell(textRow, 8).Style.Font.FontSize = 10;
                     ws.Cell(textRow, 7).Style.Fill.BackgroundColor = XLColor.FromArgb(249, 249, 249);
                     ws.Cell(textRow, 8).Style.Fill.BackgroundColor = XLColor.FromArgb(249, 249, 249);
+
+                    currentRow++;
+                }
+                else if (region.CompareType == RoiCompareType.Number)
+                {
+                    int textRow = currentRow;
+                    ws.Row(textRow).Height = 32;
+
+                    ws.Cell(textRow, 6).Value = "[数値]";
+                    ws.Cell(textRow, 6).Style.Font.FontSize = 9;
+                    ws.Cell(textRow, 6).Style.Font.Bold = true;
+                    ws.Cell(textRow, 6).Style.Font.FontColor = XLColor.FromHtml("#107C41");
+                    ws.Cell(textRow, 6).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                    ws.Cell(textRow, 6).Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+
+                    string bNum = !string.IsNullOrEmpty(region.BaseTextNormalized) ? region.BaseTextNormalized
+                                : (!string.IsNullOrWhiteSpace(region.BaseTextRaw) ? region.BaseTextRaw : "(未検出)");
+                    string tNum = !string.IsNullOrEmpty(region.TargetTextNormalized) ? region.TargetTextNormalized
+                                : (!string.IsNullOrWhiteSpace(region.TargetTextRaw) ? region.TargetTextRaw : "(未検出)");
+
+                    ws.Cell(textRow, 7).Value = bNum;
+                    ws.Cell(textRow, 8).Value = tNum;
+
+                    ws.Cell(textRow, 7).Style.Alignment.WrapText = true;
+                    ws.Cell(textRow, 8).Style.Alignment.WrapText = true;
+                    ws.Cell(textRow, 7).Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+                    ws.Cell(textRow, 8).Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+                    ws.Cell(textRow, 7).Style.Font.FontSize = 10;
+                    ws.Cell(textRow, 8).Style.Font.FontSize = 10;
+                    ws.Cell(textRow, 7).Style.Font.Bold = true;
+                    ws.Cell(textRow, 8).Style.Font.Bold = true;
+                    ws.Cell(textRow, 7).Style.Fill.BackgroundColor = XLColor.FromArgb(240, 248, 255);
+                    ws.Cell(textRow, 8).Style.Fill.BackgroundColor = XLColor.FromArgb(240, 248, 255);
 
                     currentRow++;
                 }
@@ -217,9 +262,19 @@ public class DetailExportService
         sb.AppendLine();
         sb.AppendLine($"- **出力日時**: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
         int totalPairs = results.Count;
-        int passPairs = results.Count(r => r.AllMatched);
-        int failPairs = totalPairs - passPairs;
-        sb.AppendLine($"- **総ペア数**: {totalPairs} (PASS: {passPairs} / FAIL: {failPairs})");
+        int executedPairs = results.Count(r => r.RegionResults.Count > 0);
+        int passPairs = results.Count(r => r.RegionResults.Count > 0 && r.AllMatched);
+        int failPairs = executedPairs - passPairs;
+        int unexecutedPairs = totalPairs - executedPairs;
+
+        if (unexecutedPairs > 0)
+        {
+            sb.AppendLine($"- **総ペア数**: {totalPairs} (実行済: {executedPairs} [PASS: {passPairs} / FAIL: {failPairs}]、未実行: {unexecutedPairs})");
+        }
+        else
+        {
+            sb.AppendLine($"- **総ペア数**: {totalPairs} (PASS: {passPairs} / FAIL: {failPairs})");
+        }
         sb.AppendLine();
 
         // テーブルヘッダー
@@ -346,12 +401,22 @@ public class DetailExportService
 
                 imgCounter++;
 
-                // ※）文字列比較の場合は次の行にBase画像のOCR結果文字列,Target画像のOCR結果文字列を画像と同じ桁に追加する。
+                // ※）文字列比較・数値比較の場合は次の行に抽出結果（文字列・変換後数値）を画像と同じ桁に追加する。
                 if (region.CompareType == RoiCompareType.Text)
                 {
-                    string bText = EscapeMdMultiline(region.BaseTextRaw);
-                    string tText = EscapeMdMultiline(region.TargetTextRaw);
-                    sb.AppendLine($"| | | | | | | {bText} | {tText} | | |");
+                    string bText = !string.IsNullOrWhiteSpace(region.BaseTextRaw) ? EscapeMdMultiline(region.BaseTextRaw) : "*(未検出)*";
+                    string tText = !string.IsNullOrWhiteSpace(region.TargetTextRaw) ? EscapeMdMultiline(region.TargetTextRaw) : "*(未検出)*";
+                    sb.AppendLine($"| | | | | | *(文字列)* | {bText} | {tText} | | |");
+                }
+                else if (region.CompareType == RoiCompareType.Number)
+                {
+                    string bNum = !string.IsNullOrEmpty(region.BaseTextNormalized) ? region.BaseTextNormalized
+                                : (!string.IsNullOrWhiteSpace(region.BaseTextRaw) ? region.BaseTextRaw : "(未検出)");
+                    string tNum = !string.IsNullOrEmpty(region.TargetTextNormalized) ? region.TargetTextNormalized
+                                : (!string.IsNullOrWhiteSpace(region.TargetTextRaw) ? region.TargetTextRaw : "(未検出)");
+                    string bText = EscapeMdMultiline(bNum);
+                    string tText = EscapeMdMultiline(tNum);
+                    sb.AppendLine($"| | | | | | *(数値)* | **{bText}** | **{tText}** | | |");
                 }
             }
         }
@@ -369,8 +434,8 @@ public class DetailExportService
             ms.Position = 0;
 
             var pic = ws.AddPicture(ms, $"pic_{picIndex}_{row}_{col}");
-            pic.MoveTo(ws.Cell(row, col), 4, 4);
-            FitPictureToSize(pic, 120, 90);
+            pic.MoveTo(ws.Cell(row, col), 3, 3);
+            FitPictureToSize(pic, 115, 65);
         }
         catch { /* 画像追加エラー時はスキップ */ }
     }

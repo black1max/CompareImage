@@ -190,4 +190,162 @@ public class ImagePreprocessingService
 
         return output;
     }
+
+    /// <summary>
+    /// OCR認識に特化した超解像拡大・大津二値化・自動白黒反転・太線化パイプライン
+    /// </summary>
+    public static BitmapSource OptimizeForOcr(BitmapSource cropped)
+    {
+        int srcW = cropped.PixelWidth;
+        int srcH = cropped.PixelHeight;
+
+        // 1. 3.5〜4倍アップスケール (文字高を最低 100px 以上に拡大)
+        double scale = Math.Clamp(Math.Max(120.0 / srcH, 3.5), 1.0, 5.0);
+        BitmapSource scaled = (Math.Abs(scale - 1.0) > 0.01)
+            ? new TransformedBitmap(cropped, new ScaleTransform(scale, scale))
+            : cropped;
+
+        // 2. 白パディング追加 (周囲 20px)
+        int pad = 20;
+        int padW = scaled.PixelWidth + pad * 2;
+        int padH = scaled.PixelHeight + pad * 2;
+
+        var rtb = new RenderTargetBitmap(padW, padH, 96, 96, PixelFormats.Pbgra32);
+        var dv = new DrawingVisual();
+        using (var dc = dv.RenderOpen())
+        {
+            dc.DrawRectangle(Brushes.White, null, new System.Windows.Rect(0, 0, padW, padH));
+            dc.DrawImage(scaled, new System.Windows.Rect(pad, pad, scaled.PixelWidth, scaled.PixelHeight));
+        }
+        rtb.Render(dv);
+        rtb.Freeze();
+
+        // 3. ピクセル配列 (Bgra32) の取得
+        var converted = new FormatConvertedBitmap(rtb, PixelFormats.Bgra32, null, 0);
+        int stride = padW * 4;
+        byte[] bgraPixels = new byte[stride * padH];
+        converted.CopyPixels(bgraPixels, stride, 0);
+
+        // 4. グレースケール配列の作成
+        int totalPixels = padW * padH;
+        byte[] gray = new byte[totalPixels];
+        for (int i = 0; i < totalPixels; i++)
+        {
+            int idx = i * 4;
+            gray[i] = (byte)((bgraPixels[idx + 2] * 299 + bgraPixels[idx + 1] * 587 + bgraPixels[idx] * 114) / 1000);
+        }
+
+        // 5. 外周の平均輝度から「白抜き文字 (暗い背景に明るい文字)」を自動判定
+        long borderSum = 0;
+        int borderCount = 0;
+        for (int x = 0; x < padW; x++)
+        {
+            borderSum += gray[x];                       // 上端
+            borderSum += gray[(padH - 1) * padW + x];  // 下端
+            borderCount += 2;
+        }
+        for (int y = 0; y < padH; y++)
+        {
+            borderSum += gray[y * padW];               // 左端
+            borderSum += gray[y * padW + padW - 1];    // 右端
+            borderCount += 2;
+        }
+        bool isDarkBackground = (borderSum / Math.Max(1, borderCount)) < 128;
+
+        // 6. 大津の二値化閾値を自動計算
+        byte threshold = CalculateOtsuThreshold(gray);
+
+        // 7. 二値化 (必ず「文字=黒(0)」「背景=白(255)」に正規化)
+        byte[] binary = new byte[totalPixels];
+        for (int i = 0; i < totalPixels; i++)
+        {
+            if (isDarkBackground)
+            {
+                // 暗い背景に明るい文字 -> 閾値以上が文字(黒)
+                binary[i] = gray[i] >= threshold ? (byte)0 : (byte)255;
+            }
+            else
+            {
+                // 明るい背景に暗い文字 -> 閾値未満が文字(黒)
+                binary[i] = gray[i] < threshold ? (byte)0 : (byte)255;
+            }
+        }
+
+        // 8. 文字の細線補強 (アンチエイリアスによるかすれ・途切れ解消のモルフォロジー膨張)
+        byte[] dilated = new byte[totalPixels];
+        Array.Copy(binary, dilated, totalPixels);
+        for (int y = 1; y < padH - 1; y++)
+        {
+            int row = y * padW;
+            for (int x = 1; x < padW - 1; x++)
+            {
+                if (binary[row + x] == 0 ||
+                    binary[row - padW + x] == 0 ||
+                    binary[row + padW + x] == 0 ||
+                    binary[row + x - 1] == 0 ||
+                    binary[row + x + 1] == 0)
+                {
+                    dilated[row + x] = 0;
+                }
+            }
+        }
+
+        // 9. Bgra32 ピクセル配列へ反映
+        for (int i = 0; i < totalPixels; i++)
+        {
+            int idx = i * 4;
+            byte v = dilated[i];
+            bgraPixels[idx] = v;     // B
+            bgraPixels[idx + 1] = v; // G
+            bgraPixels[idx + 2] = v; // R
+            bgraPixels[idx + 3] = 255; // A
+        }
+
+        var result = BitmapSource.Create(padW, padH, 96, 96, PixelFormats.Bgra32, null, bgraPixels, stride);
+        result.Freeze();
+        return result;
+    }
+
+    /// <summary>
+    /// 大津の二値化 (クラス間分散を最大化する最適閾値を自動計算)
+    /// </summary>
+    public static byte CalculateOtsuThreshold(byte[] grayscalePixels)
+    {
+        int[] hist = new int[256];
+        int total = grayscalePixels.Length;
+
+        for (int i = 0; i < total; i++)
+        {
+            hist[grayscalePixels[i]]++;
+        }
+
+        double sum = 0;
+        for (int i = 0; i < 256; i++) sum += i * hist[i];
+
+        double sumB = 0;
+        int wB = 0;
+        double maxVariance = 0;
+        byte bestThreshold = 128;
+
+        for (int t = 0; t < 256; t++)
+        {
+            wB += hist[t];
+            if (wB == 0) continue;
+            int wF = total - wB;
+            if (wF == 0) break;
+
+            sumB += t * hist[t];
+            double mB = sumB / wB;
+            double mF = (sum - sumB) / wF;
+
+            double betweenVariance = (double)wB * wF * (mB - mF) * (mB - mF);
+            if (betweenVariance > maxVariance)
+            {
+                maxVariance = betweenVariance;
+                bestThreshold = (byte)t;
+            }
+        }
+
+        return bestThreshold;
+    }
 }

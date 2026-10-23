@@ -9,5 +9,5 @@ public interface IOcrService
     bool IsAvailable { get; }
     string StatusMessage { get; }
 
-    Task<string> RecognizeCroppedRegionAsync(BitmapSource source, int x, int y, int width, int height);
+    Task<string> RecognizeCroppedRegionAsync(BitmapSource source, int x, int y, int width, int height, bool isNumberMode = false);
 }
